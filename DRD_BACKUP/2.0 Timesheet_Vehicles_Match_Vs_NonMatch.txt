@@ -1,0 +1,768 @@
+/*==================================================================================================================*/
+/*  DASHBOARDS  2.0 Timesheet_Vehicles_Match_Vs_NonMatch and 3.0 NonOverlapVehicles_Ts_Supplier COME FROM THIS WSHEET
+=================================================================================================================*/
+
+/* this is version 2 of the mappings , VERSION 1 NEVER GAVE TYHE ACTUAL MAPPINGS BUT NUMBERS FOR THAT */
+/* Note the errors: QUARTS is Corrected to QUARTZ for the table and TIMESHEETS_TIMESHEETS corrected to TIMESHEET_TIMESHEET*/
+/* PUT GB in FRONT OF ALL OUTPUT TABLES */
+
+--- This is A procedure to Match Vehicles from The Timesheets and Whats not in the Timesheets
+
+--- It does the calculation  of 4 Tables , These are:
+
+-- 1) GB_TIMESHEET_IN_SUPPLIER -- DB:Timesheet_Vehicles_Match_Vs_NonMatch Table: 3.0 Vehicles in Both TS ansd Telematics
+-- 2) GB_IN_TIMESHEET_NOT_SUPPLIER -- DB:Timesheet_Vehicles_Match_Vs_NonMatch :Table: 4.0 In Ts Not Supplier
+
+-- 3) GB_VEHICLE_MATCH_SUMMARY  -- DB: Timesheet_Vehicles_Match_Vs_NonMatch; Chart 1.0 Matches and Non Matches:Timesheet Vs SUPPLIER
+                                -- DB: Timesheet_Vehicles_Match_Vs_NonMatch  Table: 2.0 Table: MATCHES_Count_TS_Vs_Supplier
+-- 4) GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET  3.0 NonOverlapVehicles_Ts_Supplier; 2.0 Non_Matching_Vehicles_Reg_Number
+-- 5) GB_VEHICLE_NON_MATCHES_SUMMARY -- DB: 3.0 NonOverlapVehicles_Ts_Supplier; 1.0 Counts_Non_Matching_Vehicles
+
+-- SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+
+/*------ THIS PROCEDURE CALLS MANY OF THE TABLES USED IN THER DASHBOARD */
+
+-- S 1.0 Creation of Stored Procedure : GENERATE_VEHICLE_MATCHING_TABLES()
+CREATE OR REPLACE PROCEDURE GENERATE_VEHICLE_MATCHING_TABLES()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Table 1: MATCHING Vehicle Codes (Full matching Vehicle Codes between Timesheet and Supplier Tables)
+    CREATE OR REPLACE TABLE GB_TIMESHEET_IN_SUPPLIER AS
+    WITH supplier_mappings AS (
+        SELECT DISTINCT
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY = 'KLT Machinery and Plant Hire' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    ),
+    supplier_registration AS (
+        SELECT 'REDTOP' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+        UNION ALL
+        SELECT 'QUARTZ', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+        UNION ALL
+        SELECT 'KLT', REGISTRATION_NUMBER FROM KLT_TELEMATICS
+    ),
+    supplier_registration_distinct As (
+    SELECT DISTINCT supplier,REGISTRATION_NUMBER
+    from  supplier_registration)
+
+    
+    SELECT DISTINCT
+        m.Supplier, 
+        m.VEHICLE_CODE
+    FROM supplier_mappings m
+    JOIN supplier_registration_distinct t 
+        ON m.Supplier = t.Supplier 
+        AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER;
+
+
+        
+    -- Rest of the previous procedure remains the same...
+    -- Table 2: Vehicles in Timesheet Not in Supplier Table
+    CREATE OR REPLACE TABLE GB_IN_TIMESHEET_NOT_SUPPLIER AS
+    WITH supplier_mappings AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY = 'KLT Machinery and Plant Hire' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    ),
+    supplier_join AS
+    (SELECT 
+        Supplier,
+        VEHICLE_CODE 
+    FROM (
+        SELECT 
+            m.Supplier, 
+            m.VEHICLE_CODE
+        FROM supplier_mappings m
+        LEFT JOIN (
+             SELECT DISTINCT Supplier, REGISTRATION_NUMBER 
+            FROM
+            (SELECT 'REDTOP' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+            UNION ALL
+            SELECT 'QUARTZ', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+            UNION ALL
+            SELECT 'KLT', REGISTRATION_NUMBER FROM KLT_TELEMATICS)
+        ) t ON m.Supplier = t.Supplier AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER
+        WHERE t.REGISTRATION_NUMBER IS NULL
+    )),
+
+    Supplier_Code_1 as
+    
+    (select *
+    FROM supplier_join)
+
+    select distinct * FROM Supplier_Code_1
+    ;
+
+    
+
+    -- Table 3: Summary of Matching and Non-Matching Vehicles
+    
+    CREATE OR REPLACE TABLE GB_VEHICLE_MATCH_SUMMARY AS
+    With V_Matches as 
+     (select SUPPLIER,Count( VEHICLE_CODE) AS MATCHES from GB_TIMESHEET_IN_SUPPLIER
+     GROUP BY SUPPLIER),
+     
+    Non_V_Matches AS 
+       (select SUPPLIER,Count( VEHICLE_CODE) AS NON_MATCHES from GB_IN_TIMESHEET_NOT_SUPPLIER
+       GROUP BY SUPPLIER),
+       
+    Match_Summary AS (
+       SELECT A.SUPPLIER as SUPPLIER_M ,A.MATCHES ,B.SUPPLIER AS SUPPLIER_NM , B.NON_MATCHES 
+       FROM V_Matches AS A
+       FULL OUTER JOIN Non_V_Matches AS B
+       ON A.SUPPLIER = B.SUPPLIER 
+       ),
+       
+   Match_Summary_Mod_1 AS (
+       select * ,
+            CASE WHEN SUPPLIER_M IS NOT NULL THEN SUPPLIER_M
+            ELSE SUPPLIER_NM
+            END AS SUPPLIER
+       FROM Match_Summary),
+
+   Match_Summary_Mod_2 AS 
+   (
+    SELECT SUPPLIER, MATCHES, NON_MATCHES
+    FROM Match_Summary_Mod_1
+   ),
+    Match_Summary_Mod_3 AS 
+    (
+   SELECT SUPPLIER, 
+           COALESCE(MATCHES, 0) AS MATCHES, 
+           COALESCE(NON_MATCHES, 0) AS NON_MATCHES
+   FROM Match_Summary_Mod_2
+   
+   UNION 
+   
+   SELECT 'Total' as SUPPLIER , 
+           SUM(MATCHES) AS MATCHED , 
+           SUM(NON_MATCHES) AS NON_MATCHES
+   FROM GB_VEHICLE_MATCH_SUMMARY
+   )
+
+   select * from Match_Summary_Mod_3; 
+
+   
+
+    -- -- Table 4: Vehicles in Supplier Table Not in Timesheet
+    
+       CREATE OR REPLACE TABLE GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET AS
+       With Distinct_Vehicles_Red AS 
+        
+        (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+        WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+        ),
+
+        redtop_final as (
+        
+        SELECT 'REDTOP' AS SUPPLIER , * FROM Distinct_Vehicles_Red
+        ORDER BY REGISTRATION_NUMBER
+        ), 
+
+        -- select * from redtop_final ;
+        
+        -- -- For KLT 
+        
+        Distinct_Vehicles_KLT AS 
+        
+        (SELECT DISTINCT REGISTRATION_NUMBER FROM KLT_TELEMATICS
+         WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) ),
+
+        klt_final AS
+        
+        (SELECT 'KLT' AS SUPPLIER , * FROM Distinct_Vehicles_Klt
+        ORDER BY REGISTRATION_NUMBER),
+        
+        -- For QUARTZ
+        
+        Distinct_Vehicles_Quartz AS 
+           (SELECT DISTINCT REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+        WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) ),
+
+        quartz_final AS 
+        
+        (SELECT 'QUARTZ' AS SUPPLIER , * FROM Distinct_Vehicles_Quartz
+        ORDER BY REGISTRATION_NUMBER)
+
+    
+        --- Union all the above 
+        select * from redtop_final
+
+        union
+
+        select * from klt_final
+
+        union 
+
+        select * from quartz_final ;
+
+        -- Table 5: Vehicle Non Matching Summary 
+     
+        CREATE OR REPLACE TABLE GB_VEHICLE_NON_MATCHES_SUMMARY AS
+
+        (select SUPPLIER , Count(*) as Counts 
+        FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+        GROUP BY SUPPLIER );
+        
+    result_msg := 'Successfully created vehicle matching tables';
+    RETURN result_msg;
+END;
+$$;
+
+
+-- S 1.1 Function to Generate the Tables
+
+CREATE OR REPLACE PROCEDURE EXECUTE_VEHICLE_MATCHING()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result STRING;
+BEGIN
+    result := (CALL GENERATE_VEHICLE_MATCHING_TABLES());
+    RETURN result;
+END;
+$$;
+
+
+-- S1.2 Calling the function to generate the tables 
+CALL EXECUTE_VEHICLE_MATCHING();
+
+--=====================================================================================================
+--  S1.3 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart: 1.0 Matches and Non Matches:Timesheet Vs SUPPLIER
+--===================================================================================================
+-- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_VEHICLE_MATCH_SUMMARY
+ORDER BY MATCHES 
+
+--==================================================================================================
+--=====================================================================================================
+--  S1.4 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:2.0 Table: MATCHES_Count_TS_Vs_Supplier
+--=================================================================================================== 
+
+-- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_VEHICLE_MATCH_SUMMARY
+ORDER BY MATCHES 
+
+/*================================================================================================*/
+
+--==================================================================================================
+=====================================================================================================
+--  S1.5 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:3.0 Vehicles in Both TS ansd Telematics
+--==================--================================================================================= 
+
+-- Example of how to execute the procedure
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_TIMESHEET_IN_SUPPLIER
+order by supplier
+
+/*================================================================================================*/
+
+=====================================================================================================
+--  S1.6 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:4.0 In Ts Not Supplier
+--==================--================================================================================= 
+
+-- Example of how to execute the procedure
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_IN_TIMESHEET_NOT_SUPPLIER
+order by supplier
+
+/*================================================================================================*/
+
+=====================================================================================================
+--  S1.7 DB: 3.0 NonOverlapVehicles_Ts_SupplierChart: 1.0 Vehicle_Counts_IN_Supplier_Not_TS
+--==================--================================================================================= 
+CALL EXECUTE_VEHICLE_MATCHING();
+SELECT * FROM GB_VEHICLE_NON_MATCHES_SUMMARY
+ORDER BY COUNTS DESC
+
+
+
+-- --==================--================================================================================= 
+-- -- S1.8 3.0 NonOverlapVehicles_Ts_Supplier    Chart: 2.0 Non_Matching_Vehicles_Reg_Number_All_Suppliers
+-- --==================--================================================================================= 
+-- --- ALL SUPPLIERS
+-- --CALL EXECUTE_VEHICLE_MATCHING();
+-- SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+-- ORDER BY SUPPLIER
+-- --==================--================================================================================= 
+
+--==================--================================================================================= 
+-- S1.8 3.0 NonOverlapVehicles_Ts_Supplier    Chart:  2.0 Vehicle_Counts_In_TS_Not_Supplier
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+CREATE OR REPLACE TABLE GB_VEHICLE_IN_TIMESHEET_NOT_SUPPLIER AS 
+select SUPPLIER,COUNT(*) as Counts
+FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+GROUP BY  SUPPLIER
+ORDER BY Counts DESC;
+
+SELECT * FROM GB_VEHICLE_IN_TIMESHEET_NOT_SUPPLIER
+ORDER BY Counts DESC;
+
+--==================--================================================================================= 
+
+
+
+
+
+/*===========================================================================================*/
+--- S2.0 ------------------------NOW WE DO EACH SUPPLIER SEPARATELY--------------------------------------
+/*===============================================================================================*/
+
+--==================--================================================================================= 
+-- S2.1    DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 4a_In_Redtop_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY REGISTRATION_NUMBER
+--==================--================================================================================= 
+
+
+--==================--================================================================================= 
+-- S2.2    DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 4b_In_TS_Not_Redtop
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY VEHICLE_CODE
+--==================================================================================
+
+
+--==================--================================================================================= 
+-- S2.3   DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 5a_In_Quartz_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY REGISTRATION_NUMBER
+--==================================================================================
+
+
+--==================--================================================================================= 
+-- S2.4   DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 5b_In_TS_Not_Quartz
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY VEHICLE_CODE
+--==================================================================================
+
+
+--==================--================================================================================= 
+-- S2.5  DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart:6a_In_KLT_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'KLT'
+ORDER BY REGISTRATION_NUMBER
+--==================================================================================
+
+
+
+--==================--================================================================================= 
+-- S2.5  DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart:6b_In_TS_Not_KLT
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'KLT'
+ORDER BY VEHICLE_CODE
+--==================================================================================
+
+
+/*==============================END OF DASHBOARD CODE - BALANCE CODE IS TEST CODE  =================*/
+
+
+/* S3 ----- TEST CODE: MISCELLLNEOUS CJHECKING QUERIES -----*/
+
+
+/* S3.1 CALL ON OUTPUT TABLES */
+SELECT * FROM GB_TIMESHEET_IN_SUPPLIER
+where SUPPLIER = 'KLT'
+ORDER BY VEHICLE_CODE
+-- None
+
+
+-- S3.2
+select * from GB_IN_TIMESHEET_NOT_SUPPLIER
+where SUPPLIER = 'KLT'
+-- klt B29
+--KLT B20
+
+-- S3.3
+select * from GB_IN_TIMESHEET_NOT_SUPPLIER
+order by supplier
+
+-- S3.3.1
+select count(*) from GB_IN_TIMESHEET_NOT_SUPPLIER
+--15
+
+
+-- S3.4
+SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE 'KLT%'
+
+-- B29  
+--- B20
+
+-- S3.5
+SELECT DISTINCT REGISTRATION_NUMBER FROM KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER in (SELECT DISTINCT VEHICLE_CODE  FROM TIMESHEET_TIMESHEET
+                                WHERE COMPANY LIKE 'KLT%')
+-- None
+
+-- S3.6
+select distinct Company FROM TIMESHEET_TIMESHEET
+
+
+-- S3.7 
+select * from GB_VEHICLE_MATCH_SUMMARY
+order by MATCHES
+
+UNION SELECT 'Total' as SUPPLIER , SUM(MATCHES) AS MATCHED , SUM(NON_MATCHES) AS NON_MATCHES
+FROM GB_VEHICLE_MATCH_SUMMARY
+
+-- S 3.8
+--- In timesheet Not in supplier 
+select * from GB_IN_TIMESHEET_NOT_SUPPLIER
+-- KLT is there -- CORRECT 
+
+-- S3.9
+-- In timessheet In supplier 
+
+select * from GB_TIMESHEET_IN_SUPPLIER
+order by supplier
+-- KLT not THERE  CORRECT 
+
+
+
+--- Lets try LEFT JOIN these 2 tables 
+-- S3.10
+CREATE TABLE GB_SUPPLIER_MATCH_SUMMARY AS
+SELECT 
+    s.SUPPLIER,
+    COUNT(DISTINCT s.VEHICLE_CODE) AS MATCHES,
+    (SELECT COUNT(DISTINCT VEHICLE_CODE) 
+     FROM GB_IN_TIMESHEET_NOT_SUPPLIER) AS UNMATCHED
+FROM 
+    GB_TIMESHEET_IN_SUPPLIER s
+GROUP BY 
+    s.SUPPLIER;
+
+-- S3.11
+
+SELECT * FROM GB_SUPPLIER_MATCH_SUMMARY
+
+-- S3.;12
+select SUPPLIER,Count( VEHICLE_CODE) AS NON_MATCHES from GB_IN_TIMESHEET_NOT_SUPPLIER
+GROUP BY SUPPLIER
+
+-- S3.13
+select SUPPLIER,Count( VEHICLE_CODE) AS MATCHES from GB_TIMESHEET_IN_SUPPLIER
+GROUP BY SUPPLIER
+
+
+---- TESTING CONSOLIDATION 
+
+-- S3.14
+
+With V_Matches as 
+     (select SUPPLIER,Count( VEHICLE_CODE) AS MATCHES from GB_TIMESHEET_IN_SUPPLIER
+GROUP BY SUPPLIER),
+    Non_V_Matches AS 
+    (select SUPPLIER,Count( VEHICLE_CODE) AS NON_MATCHES from GB_IN_TIMESHEET_NOT_SUPPLIER
+   GROUP BY SUPPLIER),
+   Match_Summary AS (
+   SELECT A.SUPPLIER as SUPPLIER_M ,A.MATCHES ,B.SUPPLIER AS SUPPLIER_NM , B.NON_MATCHES 
+   FROM V_Matches AS A
+   FULL OUTER JOIN Non_V_Matches AS B
+   ON A.SUPPLIER = B.SUPPLIER 
+   ),
+   Match_Summary_Mod_1 AS (
+   select * ,
+            CASE WHEN SUPPLIER_M IS NOT NULL THEN SUPPLIER_M
+            ELSE SUPPLIER_NM
+            END AS SUPPLIER
+   FROM Match_Summary),
+
+   Match_Summary_Mod_2 AS 
+   (
+    SELECT SUPPLIER, MATCHES, NON_MATCHES
+    FROM Match_Summary_Mod_1
+   )
+   
+   SELECT * FROM Match_Summary_Mod_2
+
+/*=========================================================*/   
+/*   TRIP DATES AND STOP TIMES */
+
+/*================================================================================
+/*================= STOPPED HERE -   END OF ANALYSIS ===========================*/
+/*=============================================================================*/
+
+/*   S4 - MISCELLANEOUS EXPLORATORY QUERIES    */
+
+
+
+   
+-- Max Dates 
+   select max(TRIP_DATE) FROM REDTOP_TELEMATICS
+
+   SELECT MAX(STOP_TIME) FROM REDTOP_TELEMATICS
+   
+    
+   select max(TRIP_DATE) FROM TEST_YMH.CYBER_SEC_TESTING.QUARTZ_TELEMATICS
+
+   select * from 
+
+
+select * FROM GB_IN_SUPPLIER_NOT_TIMESHEET
+
+
+
+select DISTINCT SUPPLIER , IN_SUPPLIER_NOT_TIMESHEET FROM GB_IN_SUPPLIER_NOT_TIMESHEET
+--79 ROWS ie 79 vehcles are not in timesheets that are in 
+
+
+select DISTINCT SUPPLIER , COUNT(DISTINCT IN_SUPPLIER_NOT_TIMESHEET) as Counts 
+FROM GB_IN_SUPPLIER_NOT_TIMESHEET
+GROUP BY SUPPLIER
+
+select DISTINCT SUPPLIER, IN_SUPPLIER_NOT_TIMESHEET FROM IN_SUPPLIER_NOT_TIMESHEET
+WHERE IN_SUPPLIER_NOT_TIMESHEET IN (SELECT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+-- KLT D12  --- These vehicles are coming from KLT from this analysis
+-- KLT C15   --- as above 
+
+SELECT * FROM TIMESHEET_TIMESHEET
+WHERE VEHICLE_CODE in ('D12','C15')
+--- COMPANY REDTOP  D12
+--- Company REDTOP  C15
+
+
+
+--------------------------------- CHECKING DISTINCT NESS OF 
+
+select distinct registration_number FROM REDTOP_TELEMATICS
+ORDER BY REGISTRATION_NUMBER
+
+select distinct registration_number FROM KLT_TELEMATICS
+ORDER BY REGISTRATION_NUMBER
+
+
+
+---- CHECKING NO VEHICLES FROM REDTOP IN EITHER OF THE OTHERS 
+select COUNT (DISTINCT REGISTRATION_NUMBER) FROM REDTOP_TELEMATICS
+--63
+SELECT COUNT (DISTINCT REGISTRATION_NUMBER) FROM REDTOP_TELEMATICS 
+WHERE REGISTRATION_NUMBER NOT IN (SELECT REGISTRATION_NUMBER FROM  KLT_TELEMATICS ) OR
+    REGISTRATION_NUMBER NOT IN (SELECT REGISTRATION_NUMBER FROM  QUARTZ_TELEMATICS )
+--62
+
+-- There is a vehcle in 2 telematics tables 
+
+select DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS 
+WHERE REGISTRATION_NUMBER  IN (SELECT REGISTRATION_NUMBER FROM  KLT_TELEMATICS )
+
+-- D12  -- in both KLT and REDTOP
+
+select DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS 
+WHERE REGISTRATION_NUMBER  IN (SELECT REGISTRATION_NUMBER FROM  QUARTZ_TELEMATICS )
+-- None
+
+
+
+---- CHECKING NO VEHICLES FROM REDTOP IN EITHER OF THE OTHERS 
+select COUNT (DISTINCT REGISTRATION_NUMBER) FROM KLT_TELEMATICS
+--11
+--
+SELECT COUNT (DISTINCT REGISTRATION_NUMBER) FROM  KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT REGISTRATION_NUMBER FROM  REDTOP_TELEMATICS ) OR
+    REGISTRATION_NUMBER NOT IN (SELECT REGISTRATION_NUMBER FROM  QUARTZ_TELEMATICS )
+--
+--10 
+SELECT DISTINCT REGISTRATION_NUMBER FROM  KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER  IN (SELECT REGISTRATION_NUMBER FROM  REDTOP_TELEMATICS ) 
+--D12  -- xists in Both 
+
+
+SELECT COUNT(DISTINCT REGISTRATION_NUMBER) FROM  KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT REGISTRATION_NUMBER FROM  QUARTZ_TELEMATICS )
+--10
+
+SELECT DISTINCT REGISTRATION_NUMBER FROM  KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER  IN (SELECT REGISTRATION_NUMBER FROM  QUARTZ_TELEMATICS )
+-- ' ' -- THERE IS A BLANK REGISTRATION NUMBER IN KLT and in QUARTS 
+
+SELECT DISTINCT REGISTRATION_NUMBER FROM KLT_TELEMATICS
+-- see blanks
+
+
+SELECT DISTINCT REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+-- See blanks 
+
+SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+-- See Blanks 
+
+-- SO lets See In THE TIMESHEETS WHERE D12 is Billed TO 
+
+select * from timesheet_timesheet 
+Where Vehicle_Code ='D12'
+--Redtop 
+
+select * from timesheet_timesheet 
+Where Vehicle_Code ='C15'
+-- Redtop
+
+
+
+-- So we neded the Code Of veicles that are not inredhat not in TS
+-- Union in KLT not in TS
+--- In QUARTZ NOT IN TS 
+
+-- Lets Do This in 3 Tables on a dashboard 
+-- an compare to codes in TS we could not find 
+-- Then We uinion it 
+
+
+
+--63 Distinct Redtop , 15 Found -- therefore 48 is the number .. check below 
+SELECT COUNT(*) FROM 
+(
+SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+)
+--48
+
+
+-- For REDTOP
+WITH Distinct_Vehicles_Red AS 
+   (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) )
+
+SELECT 'REDTOP' AS SUPPLIER , * FROM Distinct_Vehicles_Red
+ORDER BY REGISTRATION_NUMBER
+
+-- For KLT 
+
+WITH Distinct_Vehicles_KLT AS 
+   (SELECT DISTINCT REGISTRATION_NUMBER FROM KLT_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) )
+
+SELECT 'KLT' AS SUPPLIER , * FROM Distinct_Vehicles_Klt
+ORDER BY REGISTRATION_NUMBER
+
+
+-- For QUARTZ
+
+WITH Distinct_Vehicles_Quartz AS 
+   (SELECT DISTINCT REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) )
+
+SELECT 'QUARTZ' AS SUPPLIER , * FROM Distinct_Vehicles_Quartz
+ORDER BY REGISTRATION_NUMBER
+
+
+
+-- Wew THEN DO A SUMMARY OF THAT 
+
+-- We put the above in One Table in the Stored Proc 
+
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+
+-- QUERIES FROM DASHBOARD 2 
+
+-- All COUNTS 
+
+SELECT * FROM GB_VEHICLE_NON_MATCHES_SUMMARY
+ORDER BY COUNTS DESC
+
+-- Only Redtop 
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY REGISTRATION_NUMBER
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY VEHICLE_CODE
+
+select * FROM GB_TIMESHEET_IN_SUPPLIER
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY VEHICLE_CODE
+
+SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS 
+ORDER BY REGISTRATION_NUMBER
+
+--- Only QUARTZ
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY REGISTRATION_NUMBER
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY VEHICLE_CODE
+
+select * FROM GB_TIMESHEET_IN_SUPPLIER
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY VEHICLE_CODE
+
+
+
+-- ONLY KLT 
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'KLT'
+ORDER BY REGISTRATION_NUMBER
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'KLT'
+ORDER BY VEHICLE_CODE
+
+select * FROM GB_TIMESHEET_IN_SUPPLIER
+WHERE SUPPLIER = 'KLT'
+ORDER BY VEHICLE_CODE
+
+
+
+
+
+
+
+
