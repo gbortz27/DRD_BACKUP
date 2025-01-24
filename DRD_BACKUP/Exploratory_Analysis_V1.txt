@@ -1,0 +1,3278 @@
+-----------------------------------------------------
+-- Query Name: Exploratory_Analysis_V1.sql 10/12/2024
+-----------------------------------------------------
+
+SELECT CURRENT_DATE()--2024-12-10
+
+-- FEW CALCULATIONS OF TIMESHEET AND TIMESHEET DAYS 
+
+-- TIMESHEET INVESTIGATION 
+
+-- The ID in Timesheet is a unique Timesheet ID 
+
+select count(*) FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEET
+--247 Rows ; 247 Timesheets 
+
+SELECT COUNT(DISTINCT ID) FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEET
+--  247
+
+
+SELECT DISTINCT COMPANY FROM TIMESHEET_TIMESHEET
+
+
+----------------------------------------------------
+----- TIMESHEET DAYS -------
+-----------------------------------------------------
+
+-- No of lines in TIMESHEET DAYS 
+
+
+SELECT COUNT(*) FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+--2983
+
+SELECT COUNT(DISTINCT ID) FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+-- 2983 
+
+SELECT COUNT (DISTINCT TIMESHEET_ID) FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+--250
+
+--- NB: 3 TIMESHEET IDS THAT ARE NOT IN TIMESHEETSDAYS, lets try Find THEM
+SELECT DISTINCT TIMESHEET_ID FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+WHERE TIMESHEET_ID NOT IN (SELECT ID from TIMESHEET_TIMESHEET)
+
+-- 1057
+-- 1056
+-- 1055
+
+-- Lets Put Missing TS in TIMEsheets in a Table:  GB_Missing_ts_in_Days_not_Tsheets
+CREATE OR REPLACE TABLE GB_Missing_ts_in_Days_not_Tsheets as 
+(
+SELECT DISTINCT TIMESHEET_ID AS Ts_Days_Not_In_TS_TS, 
+            (SELECT DISTINCT TIMESHEET_ID FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+             WHERE TIMESHEET_ID NOT IN (SELECT ID from TIMESHEET_TIMESHEET)
+             ) as Col1
+FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+          
+WHERE TIMESHEET_ID NOT IN (SELECT ID from TIMESHEET_TIMESHEET)
+
+);
+
+SELECT * FROM GB_Missing_ts_in_Days_not_Tsheets;
+
+---- ARE THERE MISSING TS that ARE IN TS and Not IN DAYS ie REVERSE OF ABOVE 
+
+
+SELECT COUNT(DISTINCT ID) FROM   TIMESHEET_TIMESHEET
+WHERE ID  NOT IN (SELECT TIMESHEET_ID from TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS)
+
+-------------------------------------------------------------------
+/*    Missing Value Comparison */
+
+CREATE OR REPLACE TABLE GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS as 
+
+(WITH missing_values AS (
+    SELECT ID as missing_value,
+           'Values in TIMESHEET not in DAYS' as source
+    FROM TIMESHEET_TIMESHEET
+    WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEETDAYS WHERE TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID = TIMESHEET_TIMESHEET.ID)
+    
+    UNION ALL
+    
+    SELECT TIMESHEET_ID,
+           'Values in DAYS not in TIMESHEET' as source
+    FROM TIMESHEET_TIMESHEETDAYS
+    WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEET WHERE TIMESHEET_TIMESHEET.ID = TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID)
+),
+Missing_Table AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY missing_value) as row_num,
+        missing_value, 
+        source 
+    FROM missing_values
+)
+-- Part 2: Pivoted view
+SELECT *
+FROM Missing_Table
+PIVOT(
+    MAX(missing_value)
+    FOR source IN ('Values in TIMESHEET not in DAYS', 'Values in DAYS not in TIMESHEET')
+) AS p
+ORDER BY row_num)
+
+select * from GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS
+
+
+CREATE OR REPLACE TABLE GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM as 
+
+WITH missing_values AS (
+    SELECT ID as missing_value,
+           'Values in TIMESHEET not in DAYS' as source
+    FROM TIMESHEET_TIMESHEET
+    WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEETDAYS WHERE TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID = TIMESHEET_TIMESHEET.ID)
+    
+    UNION ALL
+    
+    SELECT TIMESHEET_ID,
+           'Values in DAYS not in TIMESHEET' as source
+    FROM TIMESHEET_TIMESHEETDAYS
+    WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEET WHERE TIMESHEET_TIMESHEET.ID = TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID)
+),
+Missing_Table AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY missing_value) as row_num,
+        missing_value, 
+        source 
+    FROM missing_values
+)
+select * from Missing_Table
+
+
+
+SELECT * FROM GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM 
+
+
+
+
+-- Part 3: Counts
+CREATE OR REPLACE TABLE GB_COUNTS_MISSING_TIMESHEETS AS 
+
+SELECT source, COUNT(*) as count
+FROM GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM 
+GROUP BY source;
+
+SELECT * FROM GB_COUNTS_MISSING_TIMESHEETS
+
+
+-- No IDs in Timesheets are missing inm Timesheet Days 
+
+---- Lets FIND A MAPPING PER TIOMESHEET TO THE DAYS AND COMPARE - MAYBE BY HOURS 
+
+-----------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------
+--         VEHICLE ANALYSIS (ONLY REDTOP ) VS TIMESHEETS AND TIMESHEET DAYS (10/12/2024)
+-- In order to relate to the vehcles time ..source of truth we have to look at the Vehicles related in timsheet
+-- and those in the Telematics
+
+-- To Keep Initial Analysis short - we start with Redtop Telemtics
+
+-- Count Lines in Telematics Table 
+
+select count(*) from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+/* 216165 */
+
+-- Lets Count the distinct vehicles there in Redtop 
+
+select COUNT(DISTINCT REGISTRATION_NUMBER) FROM REDTOP_TELEMATICS
+
+-- 63
+
+--- Lets compare the distinct vehicles of redtop in TIMESHEETS 
+select count(distinct VEHICLE_CODE) from TIMESHEET_TIMESHEET
+where company like '%Red%'
+
+--26 
+
+-- OF THE 26 in the Timesheets how Many do we see in REDTOP 
+-- We can only Proceed withh the analysis of these vehicles 
+-- We need to generate a table of the overlap 
+-- And a table of the Missing 
+
+
+/*------ VEHICLE MATCHING ANALYSIS BETWEEN TIMESHEET AND REDTOP 10/12/2024--*/
+
+/* We create an overlapping table between the vehicles in Redtop telematics and the vehicles in The Timeshets */
+
+/* Lets lok at the overlapping vehicles in timesheet and Redtop*/
+
+--DROP TABLE GB_Vehicle_OVERLAPS
+
+-- THIS IS MODIFIED TO INCLUDE COMPANY IN THE TIMESHHEET 
+
+CREATE OR REPLACE TABLE GB_Vehicle_Overlaps_REDTOP AS 
+(SELECT DISTINCT A.REGISTRATION_NUMBER , B.VEHICLE_CODE
+FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS AS A
+INNER JOIN TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEET AS B
+ON A.REGISTRATION_NUMBER = B.VEHICLE_CODE
+WHERE COMPANY LIKE '%Red%'
+ORDER BY REGISTRATION_NUMBER)
+
+select * from GB_Vehicle_Overlaps_REDTOP
+
+SELECT COUNT(DISTINCT VEHICLE_CODE) FROM TIMESHEET_TIMESHEET
+-- 49
+
+SELECT COUNT(DISTINCT VEHICLE_CODE) FROM TIMESHEET_TIMESHEET
+where COMPANY LIKE '%Red%'
+--26
+
+
+(SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET
+where COMPANY like '%Red%' 
+and 
+VEHICLE_CODE not in (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS))
+
+
+
+-- Checks and Blances of these Overlaps 
+
+/*---- Lets do A distinct count of the Redtop Vehicles in the Timesheet */
+/* Select Count_Distinct of the Redtop Vehicles in the ovelap Table */
+
+SELECT COUNT(DISTINCT VEHICLE_CODE) from GB_VEHICLE_OVERLAPS_REDTOP
+/--- 15 ---/
+
+SELECT count(*) from GB_VEHICLE_OVERLAPS_REDTOP
+/*15*/
+
+SELECT COUNT(DISTINCT VEHICLE_CODE) from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%'
+
+/-- 26 --/
+
+SELECT COUNT(DISTINCT VEHICLE_CODE) from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_VEHICLE_OVERLAPS_REDTOP)
+/--so there are 11 vehicles that are not in the overlap  --/
+
+--- SAVE THESE 11 VEHICLES IN A TABLE 
+CREATE OR REPLACE TABLE GB_RedtopVehicles_in_TS_NotInRedtop AS 
+(SELECT DISTINCT VEHICLE_CODE from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_Redtop))
+
+SELECT * FROM GB_RedtopVehicles_in_TS_NotInRedtop
+
+/*-- Check if in redtop */
+SELECT VEHICLE_CODE FROM GB_RedtopVehicles_in_TS_NotInRedtop
+WHERE VEHICLE_CODE in (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS)
+/-- No Results--/
+
+select distinct(VEHICLE_CODE)  from timesheet_timesheet
+order by vehicle_code
+
+
+/* Lets do a check , to see how many of these 11 vehicles that are not in the overlap are in Redtop Telematics */
+
+With Vehicles_in_TS_Not_Overlap AS 
+(SELECT DISTINCT VEHICLE_CODE from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_Redtop))
+
+select VEHICLE_CODE from Vehicles_in_TS_Not_Overlap
+where  VEHICLE_CODE in (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS )
+
+--These Vehicles  are not found --
+
+---------------------------------------------------------------------------------
+--- WE NOW DO SOME TIMESHEET ANALYSIS WRT REDTOP IN TIMESHEETS 
+
+--- TIMSHEETS BASED ON REDTOP ALONE - ISOLATE A TABLE OF THESE 
+
+SELECT count(*) from TIMESHEET_TIMESHEET 
+WHERE Company LIKE 'Red%'
+
+--- 47---
+
+SELECT count(DISTINCT ID) from TIMESHEET_TIMESHEET 
+WHERE Company LIKE 'Red%'
+
+-- 47 distinct IDs
+
+
+-- Timesheets from Recognised vehhicle That we can use 
+
+SELECT count(*) from TIMESHEET_TIMESHEET 
+WHERE Company LIKE 'Red%' 
+and 
+vehicle_code in (select registration_number from TEST_YMH.CYBER_SEC_TESTING.GB_VEHICLE_OVERLAPS_REDTOP)
+-- There are only 28 Timesheets Linked to Registration numbers that can be trced 
+
+-- Lets count the distinct Ids 
+
+
+--- Lets make a table of All the Invoices 
+
+
+SELECT count(distinct id) from TIMESHEET_TIMESHEET 
+WHERE Company LIKE 'Red%' 
+and 
+vehicle_code in (select registration_number from TEST_YMH.CYBER_SEC_TESTING.GB_VEHICLE_OVERLAPS_REDTOP)
+
+--28--
+
+---------------------------------------------------------------------------------------
+--- CONCULSION: FOR REDTOP OF THE 47 TIMESHEETS ONLY 28 CAN BE ASSESSED WRT REDTOP TELEMATICS 
+--------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------
+---- TABLE OF TIMESHEETS FOR REDTOP ON IDENTIFIABLE VEHICLES RELATED TO REDTOP 10/12/2024
+---------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE TABLE GB_Timsheets_Identified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_REDTOP))
+
+-- Should be 28 lines 
+
+select count(*) from  GB_Timsheets_Identified_Redtop_Vehicles
+
+--28---
+
+---- TABLE OF INVOICES FOR REDTOP ON IDENTIFIABLE VEHICLES RELATED TO REDTOP 
+
+CREATE OR REPLACE TABLE GB_Timsheets_Identified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_REDTOP))
+
+select * from GB_Timsheets_Identified_Redtop_Vehicles;
+
+-- Should be 28 lines 
+
+select count(*) from  GB_Timsheets_Identified_Redtop_Vehicles
+
+--28---
+
+-- How to Reconcile the Timeshhets now with the day to day sheet
+
+--Select all the time-days assocaited with the identifiable vehicles
+
+select count(*) from TIMESHEET_TIMESHEETDAYS 
+where TIMESHEET_ID in (SELECT ID FROM GB_Timsheets_Identified_Redtop_Vehicles)
+
+-- 682 Days 
+
+-- Get the Total Amount in TIMESHEET DAYS 
+select count(*) from TIMESHEET_TIMESHEETDAYS
+
+-- 2983
+
+--------------------------------------------------------------------------------
+--- WE COULD WRITE A QUERY FOR THE UNIDENTIFIABLE 11 VEHiCLES ---
+--------------------------------------------------------------------------
+CREATE OR REPLACE TABLE GB_Timsheets_UnIdentified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_REDTOP))
+
+select * from GB_Timsheets_UnIdentified_Redtop_Vehicles;
+
+-- Should be 19 ie 47-28 lines 
+
+select count(*)  from GB_Timsheets_UnIdentified_Redtop_Vehicles;
+--19
+
+select count(*) from TIMESHEET_TIMESHEETDAYS 
+where TIMESHEET_ID in (SELECT ID FROM GB_Timsheets_UnIdentified_Redtop_Vehicles)
+
+-- 501 Days 
+
+-- Get the Total Amount in TIMESHEET DAYS 
+select count(*) from TIMESHEET_TIMESHEETDAYS
+
+-- 2983
+
+/*------------------------------------------------------------------------------*/
+
+/* --- WE STORE THE TABLE OF THE DAYS FOR THESE IDENTIFIABLE VEHICLES */
+
+CREATE OR REPLACE TABLE GB_Timsheet_Days_For_Identified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEETDAYS
+WHERE TIMESHEET_ID IN (SELECT ID FROM GB_Timsheets_Identified_Redtop_Vehicles))
+
+select * from GB_Timsheet_Days_For_Identified_Redtop_Vehicles
+
+SELECT count(*) from GB_Timsheet_Days_For_Identified_Redtop_Vehicles
+
+-- 682 Checks out --
+
+-- NOW WE GOING TO JOIN ALL THE TIMESHEET DAYS TO THEIR RESPECTIVE TIMESHEETS WITH ALL COLUMNS and we should get 682 lines 
+-- Call it GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+
+-- We had to change field names as they are similar..Put Days in the TIMESHEET Days NAMES 
+
+--------------------------------------------------------------------------------
+----- JOINING THE TABLES OF TIMESHEET with TIMESHEET DAYS --
+--- Reason: To see if the Addition of Days over the month is the Same as the Total actual Hours from the days 
+
+CREATE OR REPLACE TABLE GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only AS 
+(SElECT  A.ID as Days_ID ,
+                A.MODIFIED_AT as Days_MODIFIED_AT,
+                A.CREATED_AT as Days_CREATED_AT, 
+                A.DAY as Days_DAY, 
+                A.DATE as Days_DATE, 
+                A.HOURS as Days_HOURS, 
+                A.RATE as Days_RATE,
+                A.PERIOD as Days_PERIOD,
+                A.TIMESHEET_ID ,
+                B.*
+FROM  GB_Timsheet_Days_For_Identified_Redtop_Vehicles as A
+LEFT JOIN GB_Timsheets_Identified_Redtop_Vehicles as B
+ON A.TIMESHEET_ID = B.ID
+ORDER BY DATE DESC) 
+
+select count(*) from  GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+--682
+
+select * from  GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+order by TIMESHEET_ID
+
+
+-- Basically 31-08-2024.. Based on the vehicles ..therefore we have 2 months SAMPLE 
+
+-- Lets make sense of this 
+-- we have 15 vehicles at 62 days per vehicle 
+-- Total that could be 930 days total and we have 682 days
+
+--- The following Query Now compares the hours in the Timesheet with an addition of the hours per day 
+--- We use a cte to take a differencve in the Hours added up and those in the ts 
+-- Lets add in the Vehicle and the month here as well as the minimum and max dates 
+-- STORE THE ABOVE IN A TABLE : GB_Reconciling_Hours_from_Days_to_Timesheets
+
+
+
+CREATE OR REPLACE TABLE GB_Reconciling_Hours_from_Days_to_Timesheets AS 
+
+(WITH cte_Hours_Compare AS 
+
+(SELECT TIMESHEET_ID,Month,VEHICLE_CODE , DAYS_PER_MONTH, MIN(Days_DATE) as Min_DATE, MAX(Days_Date) as Max_Date, TOTAL_HOURS , SUM(Days_HOURS) as Tot_Hrs_From_Days, 
+FROM GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+GROUP BY TIMESHEET_ID ,Month,VEHICLE_CODE , DAYS_PER_MONTH, TOTAL_HOURS
+ORDER BY VEHICLE_CODE) 
+
+SELECT *, Tot_Hrs_From_Days - TOTAL_HOURS as Diff_Hrs_Days_minus_Hours, datediff('day', Min_Date, Max_Date) +1 AS  days_min_max
+from cte_Hours_Compare)
+
+select * from GB_Reconciling_Hours_from_Days_to_Timesheets
+order by VEHICLE_CODE,Month
+
+--- END OF CREATE TABLE 
+
+-- Most add Up But there are a couple of invoices where they dont add up 
+-- We will extract these 
+
+select * from GB_Reconciling_Hours_from_Days_to_Timesheets
+where DIFF_HRS_DAYS_MINUS_HOURS >0
+
+-- 8/28 Invoices Dont Add up Make a table of These and Dont Use THese as a Reference for First Investigation 
+
+-- Call the Table: GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles
+
+CREATE OR REPLACE TABLE GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles AS 
+
+               ( select * from GB_Reconciling_Hours_from_Days_to_Timesheets
+                where DIFF_HRS_DAYS_MINUS_HOURS >0
+                )
+
+select * from GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles
+
+
+select COUNT(distinct vehicle_code) from GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles
+
+--6 
+
+----  NOW GET THE TIMESHEETS WHERE THE HOURS ADD UP 
+
+CREATE OR REPLACE TABLE GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles AS 
+
+               ( select * from GB_Reconciling_Hours_from_Days_to_Timesheets
+                where DIFF_HRS_DAYS_MINUS_HOURS =0
+                ORDER BY TIMESHEET_ID
+                );
+
+select * from GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles
+ORDER BY TIMESHEET_ID
+
+--- So now we try filter the traffic based on a vehicle and a month from the table above 
+
+select count(*) from 
+
+(SELECT REGISTRATION_NUMBER , month(cast(TRIP_DATE As DATE)) as Month_TripDate, sum(Duration)/3600 as DurInHrs
+FROM REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (SELECT VEHICLE_CODE FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles)
+AND Month_TripDate = 7
+GROUP BY REGISTRATION_NUMBER , Month_TripDate)
+---
+-- 11 -- 
+-----------------------------------------------------------------
+
+--- First look at the table  sample to see what is in the 
+
+Red Top Asset Management
+
+select * from REDTOP_TELEMATICS
+limit 20
+
+--=======================================================================================
+
+---             PROBABLY MOVE THIS TO A DIFFERENT DASHBOARD AND WORKSHEET 
+-----------------------------------------------------------------------------------------------
+--- Lets Bring in the REGISTRATION NUMER MAPPING TO IMEI FOR ALL SUPPLIERS -----
+-----------------------------------------------------------------------------------------
+
+--- We DO SUPPLIER FOR SUPPLIER -- 
+
+--- ANALYSIS FOR REDTOP 
+
+-- Getting Beginning Of MONTH ---
+SELECT DISTINCT DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM REDTOP_TELEMATICS
+limit 20
+
+--- GETTING THE DISTINCT  EMEI VEHICLE CODE MAPPINGS  BY MONTH
+---- Note: The mappings may not be pure distinct ,.. to catch the 1 vehicle using many EMEI's
+
+CREATE OR REPLACE TABLE GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS AS 
+SELECT DISTINCT 'Red Top Asset Management' as Supplier,REGISTRATION_NUMBER,IMEI,
+                        DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM REDTOP_TELEMATICS
+WHERE REGISTRATION_NUMBER IN (SELECT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+ORDER BY REGISTRATION_NUMBER
+
+SELECT * FROM GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH
+
+-- Checks of the above 
+-- There are 17 Distinct Vehicles in Redtop that are in TSHEETS
+select distinct REGISTRATION_NUMBER from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--15
+
+-- select distnct Imeis
+select distinct IMEI from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 17 - there must be multiple Imeis per Regnumber ie 17 against 15 
+
+-- select distinct co0mbo reg number and Imeis
+
+select distinct REGISTRATION_NUMBER , IMEI from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--17
+
+-- So because there are multiple IMEIs PEr VEHICLE TO GET DUSTINCT , MONTH Must be used in a mapping 
+
+-- Select Total lines 
+select distinct REGISTRATION_NUMBER , IMEI, BEGIN_MONTH from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 61
+
+--- Find out where there are a number of EMEI's Per VEHICLE--
+CREATE OR REPLACE TABLE GB_COUNTS_IMIE_PER_VEHICLE_REDTOP AS
+SELECT REGISTRATION_NUMBER , COUNT(DISTINCT IMEI) as Dstnct_Imei FROM
+GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY REGISTRATION_NUMBER
+ORDER BY Dstnct_Imei DESC
+
+--- Distinct Counts Of Imei's Per Reg Number 
+SELECT * FROM GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+ORDER BY DSTNCT_IMEI DESC
+
+--- There is one vehicle that changed IMEI's 3 X ie EE2
+--- We know that the Count>1 .. we catch the culprit with the month of chanjge 
+--
+select REGISTRATION_NUMBER from GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+where Dstnct_Imei >1
+
+-- NOW WE SELECT THE REGISTRATION NUMBER , the IMEI , and the MONTH where Number of EIMEI's > 1 
+
+-- STORE THE RESULTS OF CAPTURING THE CHAGING IMEI 
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_IMEIS_PER_VEHICLE_REDTOP AS
+
+select * from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+where Dstnct_Imei >1 )
+order by IMEI,BEGIN_MONTH
+
+SELECT * FROM GB_MULTIPLE_IMEIS_PER_VEHICLE_REDTOP
+
+
+
+-- INVERT THE ANALYSIS ABOVE -- COUNT THE VEHICLES PER IMEI
+CREATE OR REPLACE TABLE GB_COUNTS_VEHICLES_PER_IMEI_REDTOP AS
+SELECT IMEI , COUNT(DISTINCT REGISTRATION_NUMBER) as Dstnct_RegNum FROM
+GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY IMEI
+ORDER BY Dstnct_RegNum DESC
+
+
+SELECT * FROM GB_COUNTS_VEHICLES_PER_IMEI_REDTOP
+ORDER BY Dstnct_RegNum DESC
+-- 17 So no IMEI is used on multiple vehicles
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_Vehicles_PER_IMEI_REDTOP AS
+
+select * from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_VEHICLES_PER_IMEI_REDTOP
+where Dstnct_RegNum >1 )
+order by IMEI,BEGIN_MONTH
+
+SELECT * FROM GB_MULTIPLE_Vehicles_PER_IMEI_REDTOP
+
+
+-- ========================================== END OF REDTOP =========================== --
+
+
+--======================= DO SAME FOR QUARZ==========================================
+
+---LETS DO THE SAME ANALYSIS FOR QUARZ 
+
+--- ANALYSIS FOR QUARZ
+
+-- Getting Beginning Of MONTH ---
+SELECT DISTINCT DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM TEST_YMH.CYBER_SEC_TESTING.QUARTZ_TELEMATICS
+limit 20
+
+--- GETTING THE DISTINCT  EMEI VEHICLE CODE MAPPINGS  BY MONTH
+---- Note: The mappings may not be pure distinct ,.. to catch the 1 vehicle using many EMEI's
+
+CREATE OR REPLACE TABLE GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS AS 
+SELECT DISTINCT 'Quartz Plant Hire' as Supplier,REGISTRATION_NUMBER,IMEI,
+                        DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM TEST_YMH.CYBER_SEC_TESTING.QUARTZ_TELEMATICS
+WHERE REGISTRATION_NUMBER IN (SELECT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+ORDER BY REGISTRATION_NUMBER
+
+SELECT * FROM GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH
+
+-- Checks of the above 
+-- There are 17 Distinct Vehicles in Redtop that are in TSHEETS
+select distinct REGISTRATION_NUMBER from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--19
+
+-- select distnct Imeis
+select distinct IMEI from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 21 - there must be multiple Imeis per Regnumber ie 17 against 15 
+
+-- select distinct co0mbo reg number and Imeis
+
+select distinct REGISTRATION_NUMBER , IMEI from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--21
+
+-- So because there are multiple IMEIs PEr VEHICLE TO GET DUSTINCT , MONTH Must be used in a mapping 
+
+-- Select Total lines 
+select distinct REGISTRATION_NUMBER , IMEI, BEGIN_MONTH from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 86
+
+--- Find out where there are a number of EMEI's Per VEHICLE--
+CREATE OR REPLACE TABLE GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ AS
+SELECT REGISTRATION_NUMBER , COUNT(DISTINCT IMEI) as Dstnct_Imei FROM
+GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY REGISTRATION_NUMBER
+ORDER BY Dstnct_Imei DESC
+
+--- Distinct Counts Of Imei's Per Reg Number 
+SELECT * FROM GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ
+ORDER BY DSTNCT_IMEI DESC
+
+-- IDENTIFY THE VEHICLES AND WHEN THIS TOOK PLACE 
+--
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_IMEIS_PER_VEHICLE_QUARZ AS
+
+SELECT * FROM GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+WHERE REGISTRATION_NUMBER in (SELECT REGISTRATION_NUMBER FROM GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ
+                                   Where Dstnct_Imei> 1)
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH , IMEI;
+
+SELECT * FROM GB_MULTIPLE_IMEIS_PER_VEHICLE_QUARZ
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH , IMEI;
+
+
+--- There are some Vehicles thyat had multiple IMEIS
+
+-- INVERT THE ANALYSIS ABOVE -- COUNT THE VEHICLES PER IMEI
+CREATE OR REPLACE TABLE GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ AS
+SELECT IMEI , COUNT(DISTINCT REGISTRATION_NUMBER) as Dstnct_RegNum FROM
+GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY IMEI
+ORDER BY Dstnct_RegNum DESC;
+
+
+SELECT * FROM GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ
+ORDER BY Dstnct_RegNum DESC
+-- 17 So no IMEI is used on multiple vehicles
+
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_Vehicles_PER_IMEI_QUARTZ AS
+
+select * from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ
+where Dstnct_RegNum >1 )
+order by IMEI,BEGIN_MONTH
+
+SELECT * FROM GB_MULTIPLE_Vehicles_PER_IMEI_QUARTZ
+
+
+
+
+
+
+
+------------------------------------------------------------------------
+------------   DO A FILTER FOR R8 on 2 TIMESHEET^S FOR MONTH OF JULY ----
+
+select count(*) from 
+
+--CREATE OR REPLACE TABLE GB_RedTop_Tel_Mnth7_Traffic AS 
+
+(SELECT * from REDTOP_TELEMATICS
+where REGISTRATION_NUMBER IN ('R8') AND Month(CAST(TRIP_DATE AS DATE)) = 7)
+
+-- 209 ROWS 
+
+---------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE TABLE GB_RedTop_Tel_R8_Mnth7_Traffic AS 
+
+(SELECT * from REDTOP_TELEMATICS
+where REGISTRATION_NUMBER IN ('R8') AND Month(CAST(TRIP_DATE AS DATE)) = 7)
+
+
+SELECT * FROM GB_RedTop_Tel_R8_Mnth7_Traffic
+order by START_TIME
+
+
+SELECT COUNT(DISTINCT TRIP_UID) from GB_RedTop_Tel_R8_Mnth7_Traffic
+--209
+
+-- For Every Day We get a Max And MIN Start and TOP TIME and then caculate the difference between the two in HouRs 
+
+--- THIS IS A TEST QUERY BEFORE WE MAKE IT A TABLE ONLY FOR R8 AND M7----
+
+With cte_Min_Start_Max_Stop_Per_Day AS 
+
+(SELECT TRIP_DATE,REGISTRATION_NUMBER ,MIN(CAST(START_TIME AS TIMESTAMP)) As Min_Start_Time, MAX(CAST(STOP_TIME AS TIMESTAMP)) As Max_Stop_Time
+     FROM GB_RedTop_Tel_R8_Mnth7_Traffic
+     GROUP BY TRIP_DATE,REGISTRATION_NUMBER),
+
+Hours_Per_Day As 
+
+(SELECT * , DATEDIFF(HOUR, MIN_START_TIME, MAX_STOP_TIME) As Hours_Calc
+FROM cte_Min_Start_Max_Stop_Per_Day
+ORDER BY TRIP_DATE)
+
+SELECT REGISTRATION_NUMBER , SUM (HOURS_CALC) AS TOTAL_HOURS_JUL
+FROM Hours_Per_Day
+GROUP BY REGISTRATION_NUMBER
+
+-- 193
+
+-- We need to Look per day 
+
+-- So lets Store the Hours per Day CTE AS A TABLE  Call it GB_HOURS_PER_DAY_R8_M7_RedTop -- Note we counted 28 Days , so lets see it 760 is the correct ts
+--This is the Hour_Per_Day CTE ABOVE NOW PUT IN A TABLE GB_HOURS_PER_DAY_R8_M7_RedTop
+
+CREATE OR REPLACE TABLE GB_HOURS_PER_DAY_R8_M7_RedTop  AS 
+
+With cte_Min_Start_Max_Stop_Per_Day AS 
+
+(SELECT TRIP_DATE,REGISTRATION_NUMBER ,MIN(CAST(START_TIME AS TIMESTAMP)) As Min_Start_Time, MAX(CAST(STOP_TIME AS TIMESTAMP)) As Max_Stop_Time
+     FROM GB_RedTop_Tel_R8_Mnth7_Traffic
+     GROUP BY TRIP_DATE,REGISTRATION_NUMBER),
+
+Hours_Per_Day As 
+
+(SELECT * , DATEDIFF(HOUR, MIN_START_TIME, MAX_STOP_TIME) As Hours_Calc
+FROM cte_Min_Start_Max_Stop_Per_Day
+ORDER BY TRIP_DATE)
+
+SELECT * FROM Hours_Per_Day
+
+--- We KNOW WE HAD 28 DAYS HERE 
+
+SELECT * FROM GB_HOURS_PER_DAY_R8_M7_RedTop
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+CREATE OR REPLACE TABLE MAP_TS_VCODE_M AS
+
+(SELECT * FROM TIMESHEET_TIMESHEET
+WHERE VEHICLE_CODE ='R8' and MONTH = 7)
+
+SELECT * FROM MAP_TS_VCODE_M
+
+SELECT * FROM TIMESHEET_TIMESHEETDAYS
+WHERE TIMESHEET_ID IN (759,760,928)
+ORDER BY DATE
+
+-- Jion the vehicle to its timesheets
+
+-- we do 928 alone 
+
+SELECT * FROM TIMESHEET_TIMESHEETDAYS
+WHERE TIMESHEET_ID IN (928)
+ORDER BY DATE
+
+
+
+/*-------------------------------------------------------------------------------------*/
+     
+/*   LEARNING ABOUT INVOICING MAPPINGS */
+
+
+select COUNT(*) from "ApInvoicePay_PROD_ERGO"
+--
+-- 10262 ---
+
+select * from "ApInvoicePay_PROD_ERGO"
+LIMIT 10
+
+SELECT COUNT (DISTINCT "ApInvoicePay_PROD_ERGO"."Supplier") from "ApInvoicePay_PROD_ERGO"
+--489
+
+SELECT DISTINCT "ApInvoicePay_PROD_ERGO"."Supplier" from "ApInvoicePay_PROD_ERGO"
+--- table of 489 distinct codes 
+
+SELECT DISTINCT "ApInvoicePay_PROD_ERGO"."Invoice" from "ApInvoicePay_PROD_ERGO"
+--9521--
+
+
+
+---- LETS TRY EXTRACT THE INVOICES FROM 'R8' FROM THE JULY PERIOD -- WHICH MUST BE REDTOP 
+
+-- INVOICE FROM REDHAT FOR THE R8 VEHICLE IN THE MONTH OF 7
+
+-- The distinct Invoices from the Timesheet Numbers are 
+
+SELECT DISTINCT INVOICE FROM TIMESHEET_TIMESHEET
+WHERE MONTH = 7 and VEHICLE_CODE = 'R8' AND COMPANY LIKE '%Red%'
+
+--D3789, D3579
+
+---- TABLE IS Inv_Red_R8_Jul_From_APInvPay
+
+CREATE OR REPLACE TABLE Inv_Red_R8_Jul_From_APInvPay AS 
+
+SELECT * from "ApInvoicePay_PROD_ERGO"
+WHERE  "ApInvoicePay_PROD_ERGO"."Invoice" in
+(SELECT DISTINCT INVOICE FROM TIMESHEET_TIMESHEET
+WHERE MONTH = 7 and VEHICLE_CODE = 'R8' AND COMPANY LIKE '%Red%')
+
+SELECT * FROM Inv_Red_R8_Jul_From_APInvPay
+--Details Supplier 010R D3789  -R88192.61
+
+--- THere is another Invoice Table : TEST_YMH.CYBER_SEC_TESTING."ApInvoice_PROD_ERGO"
+-- Let see if we find the Other Invoice There 
+--
+
+CREATE OR REPLACE TABLE Inv_Red_R8_Jul_From_APInv AS 
+
+SELECT * from "ApInvoice_PROD_ERGO"TEST_YMH.CYBER_SEC_TESTING.GB_TIMSHEETS_IDENTIFIED_REDTOP_VEHICLES
+WHERE  "ApInvoice_PROD_ERGO"."Invoice" in
+(SELECT DISTINCT INVOICE FROM TIMESHEET_TIMESHEET
+WHERE MONTH = 7 and VEHICLE_CODE = 'R8' AND COMPANY LIKE '%Red%')
+
+SELECT * FROM Inv_Red_R8_Jul_From_APInv
+
+--- Same Deatails: but reflect as +ve ..origin value 
+
+-- Supplier  010R   Invoice  D3789  Origin Value 88192.61
+
+
+--- Lets go to Timesheet For REDTOP VEHICLES in July and R8 
+-- Map to the Rates and get the rate and mutiplty rate with hrs 
+
+--- Extract from Timesheets those 2 invoice numbers 
+---  GB_TIMESHEETS_REDTOP_R8_M7_INV_NO ---see query for INVOICE NUMBERS Based in INV NUMBERS 
+
+CREATE OR REPLACE TABLE GB_TIMESHEETS_REDTOP_R8_M7_INV_NO AS 
+ 
+(SELECT  * FROM TEST_YMH.CYBER_SEC_TESTING.GB_TIMSHEETS_IDENTIFIED_REDTOP_VEHICLES
+WHERE INVOICE in ('D3789','D3579'))
+
+SELECT * FROM GB_TIMESHEETS_REDTOP_R8_M7_INV_NO 
+
+--- From this TABLE WE GET THE ID (TSHEET NO) , THE PO , INVOICE , TOTAL HRS ,MONTH -- MAP TABLE 
+---- MAP_TABLE
+
+-- 928 billed for 167 hours 
+
+-- so only for now is D3789/928 relevant
+
+-- We have mapped the INVOICE TO A TIMESHEET VIA INVICE NIUMBER 
+
+-- SO 88192/167 hrs = 528.095 R/hr  D3789 invoice Timesheet 928
+
+
+----------------------------------------
+-- ABOVE WE ESTABLISHED THAT R8 Could be associated with 928---
+-- so lets Join the 2 tables we have 
+
+-- THIS IS THE REDTOP TRAFFIC FOR R8 M7
+
+SELECT * FROM GB_HOURS_PER_DAY_R8_M7_RedTop
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- TSTS HAS A MAPPING FROM VEHICLE TO INVOICE FOR THE MONTH OF M7
+CREATE OR REPLACE TABLE MAP_TS_VCODE_M AS
+
+(SELECT * FROM TIMESHEET_TIMESHEET
+WHERE VEHICLE_CODE ='R8' and MONTH = 7)
+
+SELECT * FROM  MAP_TS_VCODE_M  -- gives a filoter version of TS for R8 and M7
+
+---- LETS CHANGE THE NAME OF TABLE FOR GB_MAP_ID_PO_INV_HRS_VEHICLECODE_fr_TS_R8_M7
+
+-- THIS WILL BE A LOOKUP TABLE - TB USED TO FILTER THE TIMESHEET DATA 
+
+CREATE OR REPLACE TABLE GB_MAP_ID_PO_INV_HRS_VEHICLECODE_fr_TS_R8_M7 AS 
+
+(SELECT VEHICLE_CODE,ID,PO,INVOICE,TOTAL_HOURS,MONTH_YEAR FROM TIMESHEET_TIMESHEET
+WHERE VEHICLE_CODE ='R8' and MONTH = 7)
+
+SELECT * FROM GB_MAP_ID_PO_INV_HRS_VEHICLECODE_fr_TS_R8_M7
+
+
+
+------------ WE NOW TEST AN EXTRATION OF THE TS WHERE ITS INV HAS BEEN PAID 
+
+------- THIIS WE WILL USE IN THE EXTRACTION OF THE DAILY HOURS TO MAP TO THE TRAFFIC DATA 
+
+---  WE NOW ASSUME THAT DAILY R8 TRAFFIC CAMR FROM THIS INVOICE / TIMSEHEET 
+
+-- SO NOW WE EXTRACT THE TIMSHEET DAILIES BSED ON ALL THE ABOVE 
+
+--- THIS IS THE REDTOP TRAFFIC FOR M7 and R8 REGISTRATION NUMBER 
+---   So we only have DATE,R8,REDTOP, to work on To EXTRACT THE TRAFFIC FROM REDTOP
+---
+SELECT * FROM GB_HOURS_PER_DAY_R8_M7_RedTop
+
+--- WE HAVE an INvoice that was paid , and related to the Timesheet 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------- INVOICE TABLES INVESTIGATIONS ___
+
+----- LETS GET THE DISTINCT INV  ON "TEST_YMH.CYBER_SEC_TESTING."ApInvoicePay_PROD_ERGO" ""
+
+
+---THESE ARE THE INVOICES RELATED TO THE TIME SHEETS (ASSUMED PAID ) FROM REDTOP R8 M7
+-- There are 3 Invoices during July FROM R8 , only 1 Appears in the the Paid Invoices 
+
+---- Put this in a table GB_REDTOP_R8_M7_INV_PAID
+
+CREATE OR REPLACE TABLE GB_REDTOP_R8_M7_INV_PAID AS 
+
+(select * from TEST_YMH.CYBER_SEC_TESTING."ApInvoicePay_PROD_ERGO"
+where "Invoice" in (SELECT INVOICE FROM GB_MAP_ID_PO_INV_HRS_VEHICLECODE_fr_TS_R8_M7))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- 3 Timesheets --  2 timesheets ( 760,759) in INVOICE 3579 - which does not Exist
+
+-------------------- 1 timeshett928 in INVOICE D3780 ----------------
+
+
+---- So lets Join R8 traffic to TS_days of  928
+
+
+
+select 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------------------------
+-----                  MISCELLANEOUS QUERIES 
+-------------------------------------------------------------
+SELECT TIMESHEET_ID , SUM(HOURS) as Total_HOURS 
+FROM TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEETDAYS
+GROUP BY TIMESHEET_ID 
+ORDER BY TIMESHEET_ID
+
+
+
+
+
+select count(*) from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+/* 216165 */
+
+
+
+select DISTINCT MACHINE, COMPANY,VEHICLE_CODE, MACHINE_SUB_TYPE,SITE_NAME FROM TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE 'Red%'
+ORDER BY COMPANY,MACHINE
+
+/*-----*/ 
+select DISTINCT VEHICLE_UID,TYPE,REGISTRATION_NUMBER from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+SELECT A.TIMESHEET_ID ,A.DATE,A.HOURS,B.ID,B.MACHINE,B.VEHICLE_CODE,B.COMPANY
+FROM TIMESHEET_TIMESHEETDAYS AS A
+LEFT JOIN TIMESHEET_TIMESHEET AS B
+ON A.TIMESHEET_ID = B.ID
+WHERE COMPANY LIKE '%red%' AND 
+
+SELECT * FROM TIMESHEET_TIMESHEETDAYS
+ORDER BY TIMESHEET_ID,DATE
+
+SELECT * FROM TIMESHEET_TIMESHEET
+ORDER BY ID
+
+
+SELECT distinct COMPANY FROM TIMESHEET_TIMESHEET
+order by COMPANY
+
+CREATE SCHEMA TEST_YMH.GB_SCHEMA;
+/*======================================================================*/
+
+---- TABLE OF INVOICES FOR REDTOP ON IDENTIFIABLE VEHICLES RELATED TO REDTOP 
+
+CREATE OR REPLACE TABLE GB_Timsheets_Identified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEET
+WHERE COMPANY LIKE '%Red%' 
+and VEHICLE_CODE IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_REDTOP))
+
+-- Should be 28 lines 
+
+select count(*) from  GB_Timsheets_Identified_Redtop_Vehicles
+
+--28---
+
+-- How to Reconcile the Timeshhets now with the day to day sheet
+
+--Select all the time-days assocaited with the identifiable vehicles
+
+select count(*) from TIMESHEET_TIMESHEETDAYS 
+where TIMESHEET_ID in (SELECT ID FROM GB_Timsheets_Identified_Redtop_Vehicles)
+
+-- 682 Days 
+
+select 
+
+-- Get the Total Amount in TIMESHEET DAYS 
+
+select count(*) from TIMESHEET_TIMESHEETDAYS
+
+-- 2983
+
+/* --- WE STORE THE TABLE OF THE DAYS FOR THESE IDENTIFIABLE VEHICLES */
+
+CREATE OR REPLACE TABLE GB_Timsheet_Days_For_Identified_Redtop_Vehicles AS 
+(SELECT * from TIMESHEET_TIMESHEETDAYS
+WHERE TIMESHEET_ID IN (SELECT ID FROM GB_Timsheets_Identified_Redtop_Vehicles))
+
+SELECT count(*) from GB_Timsheet_Days_For_Identified_Redtop_Vehicles
+
+-- 682 Checks out --
+
+-- NOW WE GOING TO JOIN ALL THE TIMESHEET DAYS TO THEIR RESPECTIVE TIMESHEETS WITH ALL COLUMNS and we should get 682 lines 
+-- Call it GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+
+-- We had to change field names as they are similar..Put Days in the TIMESHEET Days NAMES 
+
+--------------------------------------------------------------------------------
+----- JOINING THE TABLES OF TIMESHEET with TIMESHEET DAYS --
+--- Reason: To see if the Addition of Days over the month is the Same as the Total actual Hours from the days 
+
+CREATE OR REPLACE TABLE GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only AS 
+(SElECT  A.ID as Days_ID ,
+                A.MODIFIED_AT as Days_MODIFIED_AT,
+                A.CREATED_AT as Days_CREATED_AT, 
+                A.DAY as Days_DAY, 
+                A.DATE as Days_DATE, 
+                A.HOURS as Days_HOURS, 
+                A.RATE as Days_RATE,
+                A.PERIOD as Days_PERIOD,
+                A.TIMESHEET_ID ,
+                B.*
+FROM  GB_Timsheet_Days_For_Identified_Redtop_Vehicles as A
+LEFT JOIN GB_Timsheets_Identified_Redtop_Vehicles as B
+ON A.TIMESHEET_ID = B.ID
+ORDER BY DATE DESC) 
+
+select count(*) from  GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+
+
+-- Basically 31-08-2024.. Based on the vehicles ..therefore we have 2 months SAMPLE 
+
+-- Lets make sense of this 
+-- we have 15 vehicles at 62 days per vehicle 
+-- Total that could be 930 days total and we have 682 days
+
+
+--- The following Query Now compares the hours in the Timesheet with an addition of the hours per day 
+--- We use a cte to take a differencve in the Hours added up and those in the ts 
+-- Lets add in the Vehicle and the month here as well as the minimum and max dates 
+-- STORE THE ABOVE IN A TABLE : GB_Reconciling_Hours_from_Days_to_Timesheets
+
+
+
+CREATE OR REPLACE TABLE GB_Reconciling_Hours_from_Days_to_Timesheets AS 
+
+(WITH cte_Hours_Compare AS 
+
+(SELECT TIMESHEET_ID,Month,VEHICLE_CODE , DAYS_PER_MONTH, MIN(Days_DATE) as Min_DATE, MAX(Days_Date) as Max_Date, TOTAL_HOURS , SUM(Days_HOURS) as Tot_Hrs_From_Days, 
+FROM GB_Timesheet_TimesheetDays_For_Red_ID_Vehicles_Only
+GROUP BY TIMESHEET_ID ,Month,VEHICLE_CODE , DAYS_PER_MONTH, TOTAL_HOURS
+ORDER BY VEHICLE_CODE) 
+
+SELECT *, Tot_Hrs_From_Days - TOTAL_HOURS as Diff_Hrs_Days_minus_Hours, datediff('day', Min_Date, Max_Date) +1 AS  days_min_max
+from cte_Hours_Compare)
+
+select * from GB_Reconciling_Hours_from_Days_to_Timesheets
+order by VEHICLE_CODE,Month
+
+
+
+
+
+
+---------------------------------------------------------------------------------------------
+--                    UNDERSDTANDING THE TELEMATICS DATA ---
+--  
+-- I want to extract the redtop telematics data for only the vehicles I can identify 
+--  The I want to see if there are any overlapping time intervals for any one of the 15 vehicles 
+-- We must check for dulicate data
+--- Lets just get some limits of the data on the vehicles concerned , like the row count 
+
+select count(*) From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP)
+
+--54525 rows 
+
+-- Lets Look at the Dates .. max and Min in this dataset 
+
+select Min(TRIP_DATE), MAX(Trip_date) From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP)
+
+-- 2024-07-01  2024-11-025
+
+select count(distinct TRIP_UID) From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP)
+
+-- 28947
+
+--- So THERE ARE 54525 - 28947 = Duplicates of UIDs  , 
+--- Lets do an individual Group By on the UIDS
+--- TRIP UIDS ARE USED FREQUENTLY 
+
+WITH cte_uid_Counts As 
+(SELECT TRIP_UID , Count(TRIP_UID) as cnt_UID From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP) 
+group by TRIP_UID
+order by cnt_UID  DESC)
+
+select * from  cte_uid_Counts
+where cnt_UID >1
+order by cnt_UID  DESC
+limit 100
+
+-- Lets do a count of the trip uids , and find the duplicates 
+
+select count(distinct TRIP_UID , REGISTRATION_NUMBER) From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP) 
+
+-- 54406  - almost the same as the number of rows -- uid is tied to a vhicle 
+
+-- So , with the exception of a few cases (54525 - 54406 ) = 119 , A UID is not used repeatedly by One vehicle 
+
+
+--we now look at if vehicles used uids multiple times -- we compare the unique counts of Uids per vehicle with the TRotal Count 
+--- and we do a subtraction of the unique from the tpotal 
+
+--- Save a Table with the Uids Per Vehicle Comparison : GB_RedTop_Vehicle_UID_Count_Dist
+
+CREATE OR REPLACE TABLE GB_RedTop_Vehicle_UID_Count_Dist AS 
+(
+With cte_UniqueVsTotalUID_per_RegNumber as 
+
+(select REGISTRATION_NUMBER , COUNT(DISTINCT TRIP_UID) as Cnt_Unique_UID, COUNT(TRIP_UID) As Cnt_UID
+From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where REGISTRATION_NUMBER in (select REGISTRATION_NUMBER from GB_VEHICLE_OVERLAPS_REDTOP)
+GROUP BY REGISTRATION_NUMBER)
+
+select *, Cnt_UID - Cnt_Unique_UID As Duplicate_UIDs
+FROM  cte_UniqueVsTotalUID_per_RegNumber
+)
+
+SELECT * from GB_RedTop_Vehicle_UID_Count_Dist
+
+--- VEHICLE EE2 is the Only ONE WITH MANY DUPOLICATE UIDs : 117
+
+--- Lets catch the Trips of this Vehicle 
+
+--- We put the trips in a CTE with a new interval calculation and some duration calculation 
+--- , which we group by the interval and give a count of theses intervlas 
+---  the avergae Duration , which should be the actula duration and a sum of duration 
+--- tyhe sum should equal the avergae , but if there are duplicates then SUM wont equal avergae 
+--- and there will be a difference 
+--- We put that in a cte and filter out the trips 
+
+CREATE OR REPLACE TABLE GB_RedTop_Vehicle_EE2_DUPLICATE_DURATIONS AS 
+
+(
+With Trip_Durations AS 
+
+(select REGISTRATION_NUMBER , TRIP_UID, START_TIME ,STOP_TIME , START_TIME || ' // ' || STOP_TIME as Interval,Duration,
+       CAST(Datediff('SECOND',START_TIME,STOP_TIME) as DECIMAL) as CalcDur,
+       Datediff('SECOND',START_TIME,STOP_TIME) - Duration as Diff_CalcVsDuration
+From TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+where TRIM(REGISTRATION_NUMBER) ='EE2'
+ORDER BY START_TIME)
+
+select REGISTRATION_NUMBER,Interval,AVG(DURATION) as TRUE_DURATION ,SUM(DURATION) AS DUPLICATE_DUR, 
+        (SUM(DURATION) - AVG(DURATION))/3600 AS Error_Dur_hrs,
+        LISTAGG(DISTINCT TRIP_UID, ', ') WITHIN GROUP (ORDER BY TRIP_UID) AS TRIP_UID_LIST
+FROM Trip_Durations
+GROUP BY REGISTRATION_NUMBER,Interval
+ORDER BY Error_Dur_hrs DESC )
+
+SELECT * FROM  GB_RedTop_Vehicle_EE2_DUPLICATE_DURATIONS
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- Howeto relate the usage of the vehicles to the time sheets 
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------
+--               CHECKING THE DATE LIMITS 
+--------------------------------------------------------------------------------
+
+SELECT MAX(DATE) FROM TIMESHEET_TIMESHEETDAYS
+
+-- 2024-11-01
+
+SELECT MAX(TRIP_DATE) FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+--25-11-2024
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SELECT REGISTRATION_NUMBER , sum(DURATION)/3600 FROM REDTOP_TELEMATICS
+WHERE TRIP_DATE BETWEEN '2024-07-01' AND '2024-07-31' AND REGISTRATION_NUMBER ='R8'
+GROUP BY REGISTRATION_NUMBER
+
+
+
+DROP TABLE OVERLAPS;
+
+
+
+CREATE OR REPLACE TEMPORARY TABLE MyTable AS
+(SELECT DISTINCT A.REGISTRATION_NUMBER , B.VEHICLE_CODE
+FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS AS A
+INNER JOIN TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEET AS B
+ON A.REGISTRATION_NUMBER = B.VEHICLE_CODE
+ORDER BY REGISTRATION_NUMBER)
+
+SELECT * FROM MYTABLE
+
+SELECT DISTINCT(VEHICLE_CODE) FROM TIMESHEET_TIMESHEET
+WHERE VEHICLE_CODE NOT IN (SELECT REGISTRATION_NUMBER FROM MYTABLE)
+ORDER BY VEHICLE_CODE
+
+
+
+
+/*------------------------------------------------------------------------------------------*/
+select * from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+CREATE OR REPLACE PROCEDURE calculate_monthly_sales(month INTEGER, year INTEGER)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    total_sales NUMBER;
+BEGIN
+    -- Calculate total sales for the specified month and year
+    SELECT SUM(sale_amount) 
+    INTO :total_sales
+    FROM sales_table
+    WHERE MONTH(sale_date) = :month 
+    AND YEAR(sale_date) = :year;
+    
+    -- Return the total sales
+    RETURN :total_sales;
+END;
+$$;
+
+SELECT COUNT (DISTINCT REGISTRATION_NUMBER) FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+--63
+SELECT COUNT (DISTINCT VEHICLE_UID) FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+--70
+select min(TRIP_DATE) as min_date , max(TRIP_DATE) as max_date from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+select month(CAST(TRIP_DATE as Date)) as mon_trip from TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/******************************************************************************************************************************************/
+/*==================================PURCHASE ORDER RECONS ===============================================*/
+--------------------------------------------INVESTIGATION OF PORMASTER DETAIL AND ITS RELATIONSHIP WITH OTHE TABLES  ---
+
+/% SECTION 1 -- GENERAL QUERIES  --- of TABLES 
+
+/*  Invest_PorMaster_PorHdr_Detail */
+
+/* S 1.1  Investigate TEST_YMH.CYBER_SEC_TESTING."PorMasterDetail_PROD_ERGO" and TEST_YMH.CYBER_SEC_TESTING."PorMasterHdr_PROD_ERGO" */
+
+SELECT * FROM TEST_YMH.CYBER_SEC_TESTING."PorMasterDetail_PROD_ERGO"
+ORDER BY "PurchaseOrder","Line"
+
+-- 12K lines -- But many Types of Products 
+
+
+/*--------------------------------------------------*/
+/* S 1.2 Extract Some distinct NB Fields FRom PorMasterDetail and some Counts */
+/* The pup[ose here was to get a mapping from the orders table of all the distinct combinations to check for duplicates in this table 
+of only the orders that pertain to machines and the apprpriate Line numbers in that order*/
+
+-- S1.2.1
+CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Distinct AS
+(
+SELECT DISTINCT "MLatestDueDate","MLastReceiptDat" ,"PurchaseOrder","Line","MStockCode" , "MStockDes","MPrice"  FROM "PorMasterDetail_PROD_ERGO"
+--- For the multiline order we need to add these restrictions to prevent a line in the same order as hire trucks
+---- has hire labout or other things --- only need for multiline 
+--- WHERE  "MStockCode" LIKE 'Hire %' and "MStockCode" NOT LIKE '%Labour%'
+WHERE "PurchaseOrder" in (SELECT DISTINCT PO FROM TIMESHEET_TIMESHEET) 
+        and UPPER("MStockCode") NOT LIKE  '%LABOUR%' 
+        and UPPER("MStockCode")NOT LIKE '%SITE%'
+        and UPPER("MStockCode") NOT LIKE '%TRANSPORT%'
+        and UPPER("MStockCode") NOT LIKE '%COMMUNITY%'
+)
+/*S 1.2.1.1  Counts of Table above*/
+select count(*) from GB_PorMasterDetail_NB_Fields_Distinct
+-- 144--
+
+/*S 1.2.1.2 -- Counts of number of distinct Purchase Orders */
+select count (distinct "PurchaseOrder") FROM GB_PorMasterDetail_NB_Fields_Distinct
+-- 106 -- 
+
+
+/*---------------------------------------------------*/
+/* S2 -- Timesheet Vehicle Code to Machine Mappings 
+he next queries get a mapping of the vehicle code to machine for potential identiofication of the vehicle Code */
+
+/* S 2.1 -- Number of Timesheet Lines */
+
+SELECT count(*) FROM TIMESHEET_TIMESHEET
+-- 247 Lines  --
+
+
+-----------------------------------------------------
+/* S 2.2 -- VEHICLE_CODE_TO_MACHINE_LOOKUP_TABLE  */
+
+CREATE OR REPLACE TABLE VEHICLE_CODE_TO_MACHINE_LOOKUP AS 
+select distinct VEHICLE_CODE , MACHINE FROM TIMESHEET_TIMESHEET
+order by VEHICLE_CODE
+
+--- S 2.2.1 - select the Table
+select * from VEHICLE_CODE_TO_MACHINE_LOOKUP
+
+/*========================================================================*/
+
+/* S3 GENERATION OF SINGLE LINE ORDER TABLE 
+--- With Single Line Orders We should be able to map all the Timesheets To the Order Line via the order Number ----
+*/
+
+--------------------------------------------------------------------------------------------------------------
+--- Lets get a Table of orders with single line items , therefore we have a distinct set of orders ..we will do a left join of the timesheets to the orders , to enrich the timesheets with the price and the description and line numbers 
+----------------------------------------------------------------------------------------------------------------
+-
+--- Call the Single Line Orders Table: GB_PorMasterDetail_NB_Fields_Single_Line --
+
+/* S3.1 Create The single Line Order Table ---*/
+
+CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Single_Line AS 
+(
+with cte_order_cnts_EQ_1 AS
+(select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+Group By "PurchaseOrder"
+Having Counts = 1)
+
+
+SELECT * from GB_PorMasterDetail_NB_Fields_Distinct
+WHERE "PurchaseOrder" in (select "PurchaseOrder" from cte_order_cnts_EQ_1)
+)
+
+-- S3.2 Count the Lines From the Single Line Table 
+
+select count(*) from GB_PorMasterDetail_NB_Fields_Single_Line
+--86
+
+---S3.3 Count the Number of Distinct Purchase Orders 
+select count (distinct "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Single_Line
+--86
+
+-- Conclusion , there are no dulicates and we have now the posoibility of enriching the 
+--- Timesheets table with the Order table -- specifically the description of the vehicle and the Amount of Monetary  amount 
+---- This join will be done in Due Course
+
+
+/*====================================================================================*/
+-- S4 GENERATION OF MULTIL:INE ORDER TABLE AND INFO DERIVED FROM THIS 
+
+---- Call the Multiline Line Orders Table: GB_PorMasterDetail_NB_Fields_Multiline_Line --
+
+-- S4.1 -- Genrtaion of multiline order Table 
+
+CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Multiple_Line AS 
+(
+
+with cte_order_cnts_GT_1 AS
+(select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+Group By "PurchaseOrder"
+Having Counts > 1)
+
+
+SELECT * from GB_PorMasterDetail_NB_Fields_Distinct
+WHERE "PurchaseOrder" in (select "PurchaseOrder" from cte_order_cnts_GT_1)
+)
+
+-- S4.1.1 Count the lines 
+select count(*) from GB_PorMasterDetail_NB_Fields_Multiple_Line
+--57
+
+--- S4.1.2 Count the Number of Distinct Lines
+select count(DISTINCT "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Multiple_Line
+--20
+
+-- Conclusion: So we have 37 (57-20) lines that are the lines 2 plus of the multiline orders 
+-- Conclusion: There should be 106 distinct orders 20 Plus 86 , which agrees
+
+--- S 4.1.3 -- Query to see the multiple lines and that they are all vehicle related 
+select * from GB_PorMasterDetail_NB_Fields_Multiple_Line
+order by "PurchaseOrder","Line"
+
+
+/*--S5 -----------GENERATION OF SUMMARY TABLE OF COUNTS Of DISTINCT VS ACTUAL MULTILINE AND SINGLE LINED -----*/
+
+/* --= We now generate a counts table of the summary of all the above to show the distinct and overall counjts in thess tables--*/
+
+/* S5.1 --- Table of Counts Summary of Single and Multipole Lines --*/
+/*  THIS IS A TEST QUERY PLACED IN A STORED PROCEDURE BELOW */
+
+CREATE OR REPLACE TABLE GB_PorMaster_Summary_Counts AS
+
+with Counts As 
+
+(-- First Table Counts
+SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Distinct' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Distinct
+UNION ALL
+SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Distinct' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Distinct
+
+UNION ALL
+
+-- Second Table Counts
+SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Single_Line' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Single_Line
+UNION ALL
+SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Single_Line' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Single_Line
+
+UNION ALL
+
+-- Third Table Counts
+SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Multiple_Line' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+UNION ALL
+SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Multiple_Line' AS Table_Name
+FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+
+UNION ALL
+
+-- 4th Table Counts
+SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'TIMESHEET_TIMESHEET' AS Table_Name
+FROM TIMESHEET_TIMESHEET
+UNION ALL
+SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT PO) AS Count, 'TIMESHEET_TIMESHEET' AS Table_Name
+FROM TIMESHEET_TIMESHEET) 
+
+SELECT Description , Count , Table_Name From Counts 
+
+--- 5th Table of Results
+
+UNION ALL
+
+SELECT 'Diff(POs TS - POs OrderDetail)' AS Description, 
+(SELECT Count FROM Counts WHERE Description = 'Distinct_POs' AND Table_Name = 'TIMESHEET_TIMESHEET') - 
+(SELECT Count FROM Counts WHERE Description = 'Distinct_POs' AND Table_Name = 'GB_PorMasterDetail_NB_Fields_Distinct') AS Count, 'GB_PorMasterDetail_Timesheet' AS Table_Name
+
+--- S5.1.1 -- Call the Table 
+select * from GB_PorMaster_Summary_Counts
+
+---------------------------------PUT CODE ABOVE IN A STORED PROCEDURE -----------------------------------
+-- S5.2 -- We place the above code in a stored procedure and this is sent to the Dashboard - " Purchase Order Recons"
+
+CREATE OR REPLACE PROCEDURE Create_GB_PorMaster_Summary_Counts()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    CREATE OR REPLACE TABLE GB_PorMaster_Summary_Counts AS
+    WITH Counts AS (
+        -- First Table Counts
+        SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Distinct' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Distinct
+        UNION ALL
+        SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Distinct' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Distinct
+        
+        UNION ALL
+        
+        -- Second Table Counts
+        SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Single_Line' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Single_Line
+        UNION ALL
+        SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Single_Line' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Single_Line
+        
+        UNION ALL
+        
+        -- Third Table Counts
+        SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'GB_PorMasterDetail_NB_Fields_Multiple_Line' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+        UNION ALL
+        SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, 'GB_PorMasterDetail_NB_Fields_Multiple_Line' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+        
+        UNION ALL
+        
+        -- Fourth Table Counts
+        SELECT 'Row_Count' AS Description, COUNT(*) AS Count, 'TIMESHEET_TIMESHEET' AS Table_Name
+        FROM TIMESHEET_TIMESHEET
+        UNION ALL
+        SELECT 'Distinct_POs' AS Description, COUNT(DISTINCT PO) AS Count, 'TIMESHEET_TIMESHEET' AS Table_Name
+        FROM TIMESHEET_TIMESHEET
+    )
+    SELECT Description, Count, Table_Name FROM Counts
+    
+    UNION ALL
+    
+    -- Calculate the difference between Distinct_POs in TIMESHEET_TIMESHEET and GB_PorMasterDetail_NB_Fields_Distinct
+    SELECT 'Diff(POs TS - POs OrderDetail)' AS Description, 
+    (SELECT Count FROM Counts WHERE Description = 'Distinct_POs' AND Table_Name = 'TIMESHEET_TIMESHEET') - 
+    (SELECT Count FROM Counts WHERE Description = 'Distinct_POs' AND Table_Name = 'GB_PorMasterDetail_NB_Fields_Distinct') AS Count, 
+    'GB_PorMasterDetail_Timesheet' AS Table_Name;
+
+$$;
+
+/* This stored procedure named Create_GB_PorMaster_Summary_Counts will create or replace the GB_PorMaster_Summary_Counts table 
+with your desired counts and calculations.
+
+=================================================================================================================
+---                  DB: PurchaseOrder_Recons;    Chart:1.0 Row&DstnctCntsForPOsOrderTable
+====================================================================================================
+You can execute this stored procedure using: */
+-- S5.2.1 Call the Procedure 
+--
+CALL Create_GB_PorMaster_Summary_Counts();
+
+-- S5.2.2 Generatae the table for the Summaries of counts 
+
+--select * from GB_PorMaster_Summary_Counts
+
+--------------------------------------------------------------------------------
+--Count(Distinct PO) FROM TIMESHEETS
+
+select * FROM GB_PorMaster_Summary_Counts 
+ORDER BY TABLE_NAME,DESCRIPTION
+
+/*-------------------SELECT THE RESULT OF THE ABOVE----------------------------------*/
+
+-- S5.2.3 -- Additional Query 
+SELECT * FROM GB_PorMaster_Summary_Counts
+ORDER BY TABLE_NAME ASC,DESCRIPTION DESC
+
+-- Additional queries can be added here in the same pattern for other tables if needed
+
+
+/*--------------WE ARE GOING TO SEPARATE OUT MULTILINE POS FRRO..We did this Above 
+/--- S5.2.4 Checking for multiline purchase orders ---*/
+select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+Group By "PurchaseOrder"
+Having Counts >1
+
+-- Result of the above Shows many Multil;ine purchase Orders ---
+
+=================================================================================================================
+--  S6  ENRICHING THE TIMESHEET DATA WITH THE SIUNGLE LINES ORDERS -- NO AMBIGUITY IS EXPECTED 
+
+------Take the timesheet data and do an inner join to reflect where there are matches  ----
+------ The stdy at this time is only interested in capturing order details of those orders reflected in the timesheets table 
+
+--- First do comparison checks to see thedistinct orders in each table 
+
+-- S 6.1 - PRELIMINARY QUERIES BEFORE THE JOIN 
+
+-- S6.1.1 Some reminder of Number of Single Line Orders 
+select count(distinct "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Single_Line
+--86 as above
+
+--- JUST REPEAT THE COUNTS FOR MULTILINE 
+
+-- S6.1.2 Some Counts of Multiline POs 
+select count(DISTINCT "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Multiple_Line
+--20
+
+-- Conclusion: Reminjder of 106 distinct orders 
+
+-- S 6.1.3 Counjt all vehicle related orders -- Timesheets are only Vehicle Related 
+select count(distinct PO) FROM TIMESHEET_TIMESHEET
+---122 In Total , so that would be for multiline and single line 
+
+-- Conclusion: There seems to be 16 (122-106) orders in the timersheets thyat are not in the Orders Table 
+
+-- So ideally we want these 122 order details in the time sheets 
+
+--
+--- S 6.1.4 Look at the distinct machines in the Timesheets (Machine is a Grouping of Vehicles)
+select distinct machine from TIMESHEET_TIMESHEET
+--9
+-- Relative to Previous there are now 9 
+
+
+-- S6.1.5 Recount for Stability the number of lines (timesheets) to check in still fixed
+select count(*) from TIMESHEET_TIMESHEET
+-- 247
+
+
+--- S6.1.6 Count the number of distinct stock codes to describe vehicles in the Timesheets
+select distinct "MStockCode" from GB_PorMasterDetail_NB_Fields_Single_Line
+
+-- 53
+--- Conclusion
+--- So we have many more descriptions (53) in the Orders Table  to describe the vehicles in the groups (9) 
+--- There may be different vehicles on the Groups , that require diofferent descriptions , but on looking at the text 
+--- It seems that there are many descriptions to desxcribe the same vehicle
+---
+
+-- WE DO THE INNER JOIN ON THE TIMESHEETS PO  TO ORDER NUMBER in ORDER details sheet , only the Single Line Orders 
+-- For Now -- we can make og multiline yet 
+-- We also make a choice of columns we are interested in 
+-----------------------------------------------------------------------------------
+---- S6.2 Enrich the Timesheet data for single line Orders  into ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+
+-- DROP TABLE IF EXISTS ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE;
+
+CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE AS 
+
+(SELECT A.ID, 
+        A.MODIFIED_AT, 
+        A.CREATED_AT, 
+        A.MACHINE, 
+        A.COMPANY, 
+        A.PO, 
+        A.INVOICE,
+        A.ORDER_NUMBER, 
+        A.TOTAL_HOURS, 
+        A.DAYS_PER_MONTH, 
+        A.PER_DAY, 
+        A.TOTAL, 
+        A.MONTH_YEAR, 
+        A.MONTH, 
+        A.YEAR,
+        A.VEHICLE_CODE, 
+        A.MACHINE_SUB_TYPE ,
+        B.*
+        FROM timesheet_timesheet As A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Single_Line as B
+        ON A.PO = B."PurchaseOrder")
+
+-- S 6.2.1 Select the resulting Table For Visual Perusal , and availability 
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+order by PO,ID
+
+-- S6.2.2 -- Check that the distinct single line orders are the same 
+select count (distinct "PurchaseOrder") from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+-- 86 orders from 122 Timesheet orders came from single line orders 
+
+-- S6.2.3 Number of resulting lines per purchase order due to multiple timesheets in a PO 
+select count (*) from  GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE 
+--161 
+
+------------------------TIMESHEET ANALYSIS OF SINGLE LINE ORDERs --------
+--- S6.2.4 -- lets do a count of number of Timesheets per PO and a list of them , with vehicle codes
+--- for information to be used later
+
+----S6.2.4.1 Table of Counts of timesheets per Order For Single Line Orders 
+--- -- Store in One table the counjts of Timesheets per Order 
+
+CREATE OR REPLACE TABLE GB_TS_COUNTS_PER_ORDER_Single_Line_Orders AS 
+select PO, count(DISTINCT ID) as Count_IDs
+FROM GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+GROUP BY PO
+ORDER BY Count_IDS DESC
+
+SELECT * FROM GB_TS_COUNTS_PER_ORDER_Single_Line_Orders
+
+-- So there are up to 9 Timesheets in A single Line Order -- There is 1 Vehicle Description Per Line 
+--- Dios all the multiple lines describe the right vehicle - the same vehicle type
+--
+------S6.3 PUT GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE  IN A SPROC----------------------------*/ 
+
+CREATE OR REPLACE PROCEDURE Create_GB_Enriched_Timesheets_With_Order_Details_Single_Line()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE AS 
+    (
+        SELECT A.ID, 
+            A.MODIFIED_AT, 
+            A.CREATED_AT, 
+            A.MACHINE, 
+            A.COMPANY, 
+            A.PO, 
+            A.INVOICE,
+            A.ORDER_NUMBER, 
+            A.TOTAL_HOURS, 
+            A.DAYS_PER_MONTH, 
+            A.PER_DAY, 
+            A.TOTAL, 
+            A.MONTH_YEAR, 
+            A.MONTH, 
+            A.YEAR,
+            A.VEHICLE_CODE, 
+            A.MACHINE_SUB_TYPE,
+            B.*
+        FROM timesheet_timesheet AS A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Single_Line AS B
+        ON A.PO = B."PurchaseOrder"
+    );
+$$;
+
+==========================================================
+--- DB: PurchaseOrder_Recons --- Chart: 3.0 Enriched_TS_w_Order_Details_Single_LIne
+=================================================
+-- S6.3.1 Execute the stored procedure ---  
+CALL Create_GB_Enriched_Timesheets_With_Order_Details_Single_Line();
+
+--- S6.3.2 Select the table from the stored Procedure 
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+ORDER BY PO,ID;
+
+==============================================================================
+--- DB:PurchaseOrder_Recons     Chart: 2.0 NoteOnSingleLinePOS
+==============================================================================
+---- These will not be inj the stored proc as theay are based on descr5ibing on the fly and can be changed or updated quicly 
+--- Rather than run the stored proc 
+---- S6.3.3  Notes Generatred in my On the Single Line Enriched Table 
+CREATE OR REPLACE TABLE GB_NOTES_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE AS 
+
+SELECT '- This The single Line PO is easy to bring timesheet mappings accross:\n Used to relate the data in the following ways:' AS notes_Single_Line_POS
+UNION ALL
+SELECT '- 1) Recon the timsheets to the order and Price: Are the timesheets related to an order in the order table'
+UNION ALL
+SELECT '- 2) Recon the timesheet hours to this price'
+UNION ALL
+SELECT '- 3) What about the consistency of descriptions .. hand typed ' 
+UNION ALL
+SELECT '- 4) As a basis for further analysis - see below ' ;
+
+-- S6.3.1 -- Extract the Notes 
+SELECT * FROM GB_NOTES_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE;
+
+-----
+
+----------------------------------------------------------------------------------------
+---            ANALYSIS ON THE SINGLE LINE TABLE ------
+--
+----1) First Find The Mapping of Descriptions in eack of the tables
+---- a) The distinct counts individually 
+---- b) The distinct counts of the combinations 
+
+========================================================
+--- DB:PurchaseOrder_Recons     Chart: 4.0 NoteOnSingleLinePOS
+==========================================================
+
+--- S6.4 Repair to My Tables Before Mappings 
+
+CREATE OR REPLACE TABLE GB_REPAIR_BEFORE_MAPPINGS_2 AS 
+
+SELECT '- You will notice two descriptions were "not provided" used deduction to replace with a name :' AS notes_Single_Line_POS
+UNION ALL
+SELECT '- THE code to do this was '
+UNION ALL
+SELECT '- case when (MACHINE = "Not provided" and CONTAINS("MStockCode","water") ) then "Water Tanker" '
+UNION ALL
+SELECT '-when (MACHINE = "Not provided" and  CONTAINS("MStockCode", "Excavator")) then "Excavator" ' ;
+
+
+--- S6.4.1 Select the Notes to Check 
+SELECT * FROM GB_REPAIR_BEFORE_MAPPINGS_2
+
+------------------------------------------------------------------------------------------
+--- S6.5 EXERCISE IN MAPPING DESCRIPTIONS TO MACHINES FROM ENRICHED SINGLE LINE TABLES
+
+------ Some Stats before we create the mapping --- let look at the distinct descriptions from both sides 
+---
+--- Lets look at distinct descriptions in this 1 line file -- I was hoping to use this as a second key 
+--- so we look at distinct this will give the truth before we replaced  Not-provided by the truth
+
+--- S6.5.1 Counts of the Distinct Machines from the ENRICHED SINGLE LINE TABLE 
+select count( distinct Machine ) from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE;
+---- 8
+
+---- S6.5.2 select the distinct machines only from the single line table 
+select distinct Machine from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE 
+-- THere should only be 6 as Not Provided can be fixed up and Tractor Backhoe Loader should be Tractor Loader Backhoe
+
+---- S6.5.3 Select the distinct counts 
+select count( distinct "MStockCode" ) from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE; 
+---- 53 
+--- For the same Machine Groups there are many different descriptions 
+
+
+--- there are 424 POSSIBLE different combinations of possibilities of which only 8 are correct 
+
+-- S6.5.4 select distinct combinations of the Stock Codes 
+--- There are 62 distinct machine stackcodes 
+select count (distinct Machine ,"MStockCode") FROM GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+--62 
+
+--- There are actualy 6 distinct codes of Machine , there forethere are actually 56 "Incorrect description mappings"
+
+--- S6.5.6 CREATE A STORED PROCEDURE FOR THE SUMMARY COUNYTS 
+
+CREATE OR REPLACE PROCEDURE Create_MstockCode_Machine_Mapping_Counts()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    CREATE OR REPLACE TABLE mstockcode_machine_mapping_counts AS
+    WITH Counts AS (
+        -- Distinct Machines
+        SELECT 'Dstnct_Machines' AS Description, COUNT(DISTINCT machine) AS Count, 'gb_enriched_timesheets_w_order_details_single_line' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+        
+        UNION ALL
+        
+        -- Distinct StockCode
+        SELECT 'Dstnct_StockCode' AS Description, COUNT(DISTINCT "MStockCode") AS Count, 'gb_enriched_timesheets_w_order_details_single_line' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+        
+        UNION ALL
+        
+        -- Distinct Machine and StockCode Combination
+        SELECT 'Dstnct_Mach_StkCde' AS Description, COUNT(DISTINCT machine, "MStockCode") AS Count, 'gb_enriched_timesheets_w_order_details_single_line' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+    )
+    SELECT Description, Count AS Counts_PriorCorrection, Table_Name FROM Counts
+    
+    UNION ALL
+    
+    -- Calculate Erroneous Descriptions
+    SELECT 'Erroneous_Descriptions' AS Description,
+    (SELECT Count FROM Counts WHERE Description = 'Dstnct_StockCode') -
+    (SELECT Count FROM Counts WHERE Description = 'Dstnct_Machines') AS Counts_PriorCorrection,
+    'gb_enriched_timesheets_w_order_details_single_line' AS Table_Name
+    
+    UNION ALL
+    
+    -- Calculate Ambiguous Combos
+    SELECT 'Ambiguous_Combos' AS Description,
+    (SELECT Count FROM Counts WHERE Description = 'Dstnct_Mach_StkCde') -
+    (SELECT Count FROM Counts WHERE Description = 'Dstnct_Machines') AS Counts_PriorCorrection,
+    'gb_enriched_timesheets_w_order_details_single_line' AS Table_Name;
+$$;
+
+==============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 5.0 Stock_Code_Machine_Mapping_Cnts_Single_Line
+===========================================================================================
+
+-- Execute the stored procedure
+--- S6.5.7 Call the Stored Procedure For The Summary Counts 
+CALL Create_MstockCode_Machine_Mapping_Counts();
+
+select * FROM MstockCode_Machine_Mapping_Counts
+----------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+---- S6.5.8  DO THE DISTINCT VALUES OF STOCK CODES AND MASCHINES BASED ON MAPPINGS OF SINGLE LINE TABLE 
+-------------BELOW ARE THE TESTS FOR THE STORED PROCEDURE WHICH CONSTRUCT THE TABLES TO PRODUCE THE VALUES
+
+---- CONTINUE HERE --- 
+
+--  Now wee Produce the distinct values in each table and put them in a line , with the evenuall table where we have multiple 
+-- descriptions 
+
+--- Put this in a stored procedure with 3 tables , the tablenames are shown in the lines above the statement
+
+----S6.5.8.1 table name: GB_Dstnct_Machine_From_Single_Line
+--table name: GB_Dstnct_Machine_From_Single_Line
+
+select distinct MACHINE FROM GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE;
+
+-----S6.5.8.2 table name: GB_Dstnct_StockCode_From_Single_Line
+
+--table name: GB_Dstnct_StockCode_From_Single_Line
+
+select distinct "MStockCode" from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE;
+
+-----S6.5.8.3  table name: GB_Dstnct_Machine_StockCode_From_Single_Line
+
+--table name: GB_Dstnct_Machine_StockCode_From_Single_Line
+
+select distinct Machine ,"MStockCode" FROM GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+
+-- We have 3 tables above which were created amanually and have beenj test 
+
+--- S6.5.8.4 We now create the stored propcedure , which creates thes tablaes 
+---- 
+
+CREATE OR REPLACE PROCEDURE Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Create the GB_Dstnct_Machine_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_machine_from_single_line AS
+    SELECT DISTINCT machine 
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    -- Create the GB_Dstnct_StockCode_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_stockcode_from_single_line AS
+    SELECT DISTINCT "MStockCode" 
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    -- Create the GB_Dstnct_Machine_StockCode_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_machine_stockcode_from_single_line AS
+    SELECT DISTINCT machine, "MStockCode"
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    result_msg := 'Tables created successfully';
+    RETURN result_msg;
+END;
+$$;
+
+
+--- S6.5.8.4.1 Execute the stored procedure
+-- Execute the stored procedure
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+--- S 6.6 -- Generation of the charts in the daswhboard (3 Charts )
+
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 6.0 Distinct_Machines_Single_Line_Orders
+--- ========================================================================================
+
+--- S6.6.1 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_machine_from_single_line
+--- The table is queried after generation
+
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+select * from gb_dstnct_machine_from_single_line
+order by MACHINE
+
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 7.0 Distinct_MStockCodes_Single_Line_Orders
+--- ========================================================================================
+
+--- S6.6.2 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_stockcode_from_single_line
+--- The table is queried after generation
+
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+
+select * from gb_dstnct_stockcode_from_single_line 
+order by "MStockCode"
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 8.0 Distinct_Machine_MStockCodes_Single_Line_Orders
+--- ========================================================================================
+
+--- S6.6.3 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_stockcode_from_single_line
+--- The table is queried after generation
+
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+
+select * from gb_dstnct_machine_stockcode_from_single_line
+order by MACHINE,"MStockCode"
+
+
+
+
+-- ================================================================================
+--- S7   DOING THE COUNTS OF THE CODES OF THE BELOW  TABLE : GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+
+--- S7.1 INTERIM QUERY TO FIX UP THE TABLE BEFORE WE DO THE COUNTS -- Not Prodide is an unacceptable MACHINE Value 
+
+---------------------CONTNUE WITH THE CORRECTED VERSION AND THE MAPPING TABLE COUNTS AMD THE SPLIT THE COUNTS INTO THOSE OF ONE TO ONE 
+---------------------AND THOSE OF ONE TO MANY , in the counts 
+----------------------Make note of all the inconxsistencies.
+
+
+--- IN ORDER TO MAP THE DESCRIPTION FOR THE NEXT JOIN LETS CREATE A MAPPING TABLE 
+--- The mapping table is called GB_Mstock_Code_Machine_Mapping
+
+--- Some Indicators --- lets look at descriptions 
+
+
+
+CREATE OR REPLACE TABLE GB_Mstock_Code_Machine_Mapping_Fixed as
+(
+With distinct_combo_code_machine as 
+
+(SELECT DISTINCT "MStockCode",MACHINE FROM GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE),
+
+Fixed_Not_Provided AS 
+
+(select *, case when (MACHINE = 'Not provided' and CONTAINS("MStockCode",'water') ) then 'Water Tanker'
+               when (MACHINE = 'Not provided' and  CONTAINS("MStockCode", 'Excavator')) then 'Excavator'
+               else MACHINE
+               end AS Machine_Fixed
+               from distinct_combo_code_machine)
+               
+select distinct "MStockCode" , Machine_Fixed from Fixed_Not_Provided )
+
+--------------------------------------------------------------------------
+
+-- S7.1.1 Test the Query Above 
+select MACHINE_FIXED, "MStockCode" from GB_Mstock_Code_Machine_Mapping_Fixed
+order by Machine_Fixed
+
+--================== CONTINUE HERE ====
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 11.0 Distinct Machines Per StockCode
+--- ========================================================================================
+
+-- S7.1.2 -- Ambigiuites in the Class Attrribution Per MstockCode 
+
+---THERE ARE SIGNIFICANT AMBIGUITIUES IN THE DEFINITIONS OF THE VEHICLE TYPE 
+
+
+CREATE OR REPLACE TABLE GB_Multiple_Machines_Per_StockCode AS 
+select * from GB_Mstock_Code_Machine_Mapping
+where "MStockCode" in
+(select "MStockCode" from
+(select "MStockCode", count(*) as counts  FROM GB_Mstock_Code_Machine_Mapping
+group by "MStockCode"
+having counts >1
+order by counts desc )
+)
+order by "MStockCode";
+
+select * from GB_Multiple_Machines_Per_StockCode
+order by "MStockCode",MACHINE_FIXED
+
+------------- COUNT THE STOCK CODES PER MACHINE --- 
+-- Notes: The implication of this is that there are 14 different ADTs in the ADT Group , and the like 
+--- The presumption is an inaccurate/inconsistent description of the Vehicle ordered.
+--- A second presumption is this is FreeHand Text
+--- The suggestion is that this has to be rectified, 
+
+--- Call this GB_SumCounts_Table_MStockCodes_Per_Machine
+
+---S7.1.3 Counts of Stockcodes Per Machine 
+
+CREATE OR REPLACE TABLE GB_SumCounts_Table_MStockCodes_Per_Machine AS 
+
+select distinct MACHINE_FIXED, count(*) as Cnt_Stock_Codes from GB_Mstock_Code_Machine_Mapping_Fixed
+group by MACHINE_FIXED 
+order by Cnt_Stock_Codes DESC
+
+select * from GB_SumCounts_Table_MStockCodes_Per_Machine
+
+---- We now do the reverse GB_SumCounts_Machines_Per_MStockCodes
+
+---S 7.1.4 Counts Of Machines Per Stockcode 
+
+CREATE OR REPLACE TABLE GB_SumCounts_Table_Machines_Per_StockCode AS 
+
+select distinct "MStockCode", count(*) as Cnt_Machines from GB_Mstock_Code_Machine_Mapping_Fixed
+group by "MStockCode"
+order by Cnt_Machines DESC
+
+select * from GB_SumCounts_Table_Machines_Per_StockCode
+order by Cnt_Machines DESC
+
+
+
+
+/* ===============================================================================================*/ 
+/*                      LETS DO A STORED PROCEDURE FOR THE ABOVE TABLE     */
+/*                                                                          */
+-- S7.1.5  Stored Procedure to Do the Above Counts both Ways 
+--- The stored proedures will generate the Tables Above
+
+CREATE OR REPLACE PROCEDURE Create_SumCounts_Tables()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+BEGIN
+    -- Create the GB_SumCounts_Table_MStockCodes_Per_Machine table
+    CREATE OR REPLACE TABLE gb_sumcounts_table_mstockcodes_per_machine AS
+    SELECT MACHINE_FIXED, COUNT(*) AS cnt_stock_codes
+    FROM gb_mstock_code_machine_mapping_fixed
+    GROUP BY MACHINE_FIXED
+    ORDER BY cnt_stock_codes DESC;
+
+    -- Create the GB_SumCounts_Table_Machines_Per_StockCode table
+    CREATE OR REPLACE TABLE gb_sumcounts_table_machines_per_stockcode AS
+    SELECT "MStockCode", COUNT(*) AS cnt_machines
+    FROM gb_mstock_code_machine_mapping_fixed
+    GROUP BY "MStockCode"
+    ORDER BY cnt_machines DESC;
+
+    RETURN 'Tables created successfully';
+END;
+$$;
+
+-- Execute the stored procedure
+CALL Create_SumCounts_Tables();
+
+--DROP TABLE GB_SumCounts_Table_MStockCodes_Per_Machine;
+
+--DROP TABLE GB_SumCounts_Table_Machines_Per_StockCode;
+
+-- Test Output of the above stored procs 
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 9.0 Count_Stock_Codes_Per_Machine_SL_Orders
+--- ========================================================================================
+
+--- S 7.1.5.1 Generate the Counts of Stockcodes Per Machine FRom Table GB_SumCounts_Table_MStockCodes_Per_Machine
+
+CALL Create_SumCounts_Tables();
+
+select * from GB_SumCounts_Table_MStockCodes_Per_Machine
+order by cnt_stock_codes DESC
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 10.0 Count_Machines_Per_MStockCode_SL_Orders
+--- ========================================================================================
+
+--- S 7.1.5.2 Generate the Counts of Machines Per StockCode from Table GB_SumCounts_Table_MStockCodes_Per_Machine
+
+CALL Create_SumCounts_Tables();
+select * from GB_SumCounts_Table_Machines_Per_StockCode
+order by Cnt_Machines DESC
+
+
+----------------------------------NOTES ON THE ABOVE GRAPHS --------------------
+
+/* Notes to the Results of these Tables */
+
+-- The Distinct Macine Table has a Not Provided code and 2 definitions where word are revesed .. 
+--- suggest the correct definition is Tractor Loader Backhoe
+--- to conitinue this analysis: Not provided was filled in with a projected value based in deduction - see below
+--- The Distinct SM_Stockcodes Have many deficitions of the same thing 
+---  It may well be the case that there are many different combinations of vehicles within a class of DISTINCT machines ie sizes 
+----- withy the same description.. suggestion is the vehicle is described by the text description with underscore followed by the size underscore units 
+------ the text description may wel be an abbreviation ie TLB,ADT,FEL 
+---- If 4 X 4 is only a TLB , leave it out as its difficult to type unless discipline of 4 X 4 
+------ The reason for getting the text right is to avoid ambiguities under audit and error resolution , TLB's and FELs are mixed up 
+----- ADTS and water carts ..these are easy to spot. and may be material to the costs.
+--- NOTE:One can jusyt look at the sidebars in the detailed view to spot incomsistences , these are autimated in snowflake .
+
+----- Put the Notes in sql queries 
+
+--------PUT THESE INTO CODE FOR NOTES  AT THE BASE OF THE TABLE ----------------------
+
+----------------------------------------------------------------------------
+
+--==================================================================================
+---   THIS SECTION WILL GENERATE NOTES FROM THE ABOVE 
+
+-- S 7.1.6 Notes on the Above Tables 
+
+CREATE OR REPLACE TABLE GB_Notes_For_Machine_MStockCode_Mappings AS 
+
+SELECT 'These notes are for the Above 5 Tables based on single Line Orders. Multiple line orders - complexity - need these mappings to solve  :' AS Notes_for_Distinct_Machines_MStockCodes_Combos_Above
+UNION ALL
+SELECT '- Distinct Machines Table - "Not Provided" should not exist - this was repaired by Deduction'
+UNION ALL
+SELECT '- Distinct Machines Table:  inconsistency as same vehicle is described in 2 ways --  Tractor Backhoe Loader ; Tractor Loader Backhoe '
+UNION ALL
+SELECT '- Distinct Stock Codes Tabled shows the many different ways a vehicle is described , different spacing , capitalization etc '
+UNION ALL
+SELECT '- Combinations Table Distinct Machine StockCodes:  shows the Combination Mapping  in How the Machines are described  '
+UNION ALL
+SELECT '- Count_Stock_Codes_Per_Machine  shows  different descriptions for the same vehicle Class - implying that many subcategories of types??'
+UNION ALL
+SELECT '- Count_Machines_Per_StockCode shows  different Classes for tyhe same description  - can 1 description fall into 2 classes - unlikely'
+;
+
+
+--- S 7.1.6.1 Testing The Output
+select * from GB_Notes_For_Machine_MStockCode_Mappings
+
+--- S7.1.7 Stored Procediure For the Note of the Above Exercise 
+
+CREATE OR REPLACE PROCEDURE Create_GB_Notes_For_Machine_MStockCode_Mappings()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+BEGIN
+    -- Create the GB_Notes_For_Machine_MStockCode_Mappings table
+    CREATE OR REPLACE TABLE gb_notes_for_machine_mstockcode_mappings AS 
+    SELECT 'These notes are for the Above 5 Tables based on single Line Orders. Multiple line orders - complexity - need these mappings to solve  :' AS Notes_for_Distinct_Machines_MStockCodes_Combos_Above
+    UNION ALL
+    SELECT '- Distinct Machines Table - "Not Provided" should not exist - this was repaired by Deduction'
+    UNION ALL
+    SELECT '- Distinct Machines Table:  inconsistency as same vehicle is described in 2 ways --  Tractor Backhoe Loader ; Tractor Loader Backhoe '
+    UNION ALL
+    SELECT '- Distinct Stock Codes Tabled shows the many different ways a vehicle is described , different spacing , capitalization etc '
+    UNION ALL
+    SELECT '- Combinations Table Distinct Machine StockCodes:  shows the Combination Mapping  in How the Machines are described  '
+    UNION ALL
+    SELECT '- Count_Stock_Codes_Per_Machine  shows  different descriptions for the same vehicle Class - implying that many subcategories of types??'
+    UNION ALL
+    SELECT '- Count_Machines_Per_StockCode shows  different Classes for the same description  - can 1 description fall into 2 classes - unlikely';
+
+    RETURN 'Table gb_notes_for_machine_mstockcode_mappings created successfully';
+END;
+$$;
+
+
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 12.0 Notes on Discrepancies Between Descriptions and Machines 
+--- =========================================================================================================
+
+--- S7.1.8 Notes For the Above Tables 
+-- Execute the stored procedure
+CALL Create_GB_Notes_For_Machine_MStockCode_Mappings();
+
+select * from GB_Notes_For_Machine_MStockCode_Mappings
+
+--For Testing DROP TABLE GB_Notes_For_Machine_MStockCode_Mappings
+
+
+--- NOW WE MUSTY JOIN THIS ONTO THE TABLE ABOVE 'with multiple lines ' , so we have now the macibne fixed and order number 
+---- we use both in the join to join the mulytiple line orders , so we have a unique line , unique price 
+
+--- we first join to the mapping table to the multiple line orders table to get and equivalent deescription 
+---- to that in the timesheet table 
+----- we call this GB_Multiple_line_Orders_w_Machine_Description
+
+/*-----------------------------------------------------------------------------------------------------*/
+/* S 7.2  MULTIPLE LINE ORDERS --- LINE 725 -- MULTILINE ORDER ANALYSIS     */
+
+SELECT 'THIS IS THE MULTIPLE LINE ORDER ANALYSIS' AS " "
+
+FROM DUAL;
+
+--=============================== WE REPEAT THE GENERATION OF THE TABLE HERE === 
+-- S7.2.1 Repeat of the Multiple Order Table Creation to incoporate into Stored Procedure For Dashboard Consitenct
+CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Multiple_Line AS 
+(
+
+with cte_order_cnts_GT_1 AS
+(select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+Group By "PurchaseOrder"
+Having Counts > 1)
+
+
+SELECT * from GB_PorMasterDetail_NB_Fields_Distinct
+WHERE "PurchaseOrder" in (select "PurchaseOrder" from cte_order_cnts_GT_1)
+)
+
+--S7.2.1.1 Test Above Table Call
+select * FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+order by "PurchaseOrder","Line"
+
+/*  Look at the multilpler line orders table   */
+
+--=========================CREATION OF STORED PROCEDURE TO GENERATE TABLE ===
+
+-- S7.2.2 Creation Of Stored Procedure For Multiple Line Order Table 
+
+CREATE OR REPLACE PROCEDURE Create_GB_PorMasterDetail_NB_Fields_Multiple_Line()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+BEGIN
+        CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Multiple_Line AS 
+        (
+        
+        with cte_order_cnts_GT_1 AS
+        (select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+        Group By "PurchaseOrder"
+        Having Counts > 1)
+        
+        
+        SELECT * from GB_PorMasterDetail_NB_Fields_Distinct
+        WHERE "PurchaseOrder" in (select "PurchaseOrder" from cte_order_cnts_GT_1)
+        );
+        RETURN 'GB_PorMasterDetail_NB_Fields_Distinct';
+END;
+$$;
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 13.0 Creation and Selection of Multiple Line Order Table 
+--- =========================================================================================================
+
+-- 7.2.3 Select Multiple Line Orders 
+
+Call Create_GB_PorMasterDetail_NB_Fields_Multiple_Line();
+
+select * FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+order by "PurchaseOrder","Line"
+
+
+
+/*--- WE WANT TO SEE THE EXTENT OF THE LINES PER ORDER */
+
+--- and count them -- PUT THIS IN THE DASHBOASRD
+--- Could Replace by Stored Procedure 
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 14.0 Counting Lines Per Order - Multiple Line Orders 
+--- =========================================================================================================
+
+-- S7.2.4 Count Number of Lines Per Order- Multiple Lines Orders 
+CREATE OR REPLACE TABLE GB_LINES_PER_PO_MultilinePOTable AS 
+select "PurchaseOrder" , count(*) as Counts 
+from GB_PorMasterDetail_NB_Fields_Multiple_Line
+group by "PurchaseOrder"
+order by counts DESC
+
+select * from GB_LINES_PER_PO_MultilinePOTable
+order by counts DESC
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 15.0 Counts of Stock Codes - Multiple Line Orders 
+--- =========================================================================================================
+
+/* THE NEXT TABLE CAN BE THE DISTINCT STOCK CODES and COUNTS */
+
+-- S7.2.5 Counts of Stock Codes - Multiple Line Orders 
+--- and count them -- PUT THIS IN THE DASHBOASRD
+--- Could Replace by Stored Procedure 
+CREATE OR REPLACE TABLE GB_COUNTS_PER_MStockCode AS 
+select "MStockCode" , count(*) as Counts 
+from GB_PorMasterDetail_NB_Fields_Multiple_Line
+group by "MStockCode"
+order by "MStockCode"
+
+select * from GB_COUNTS_PER_MStockCode
+order by "MStockCode"
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 16.0 Counts of Stock Codes In Multiple Line Orders Not In Single Line 
+--- =========================================================================================================
+
+-- S7.2.6 Counts of Stock Codes In Multiple Line Orders Not In Single Line
+--- Lets now get a list of these multiline codes that are not in ther single line codes --
+--- Table Name: GB_MLineStockCodes_NotIn_SLineStockCodes
+
+
+CREATE OR REPLACE TABLE GB_MLineStockCodes_NotIn_SLineStockCodes AS 
+SELECT * FROM GB_COUNTS_PER_MStockCode
+WHERE "MStockCode" NOT IN 
+(SELECT "MStockCode" 
+FROM TEST_YMH.CYBER_SEC_TESTING.GB_PORMASTERDETAIL_NB_FIELDS_SINGLE_LINE)
+order by "MStockCode";
+
+select * from GB_MLineStockCodes_NotIn_SLineStockCodes
+order by "MStockCode";
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 17.0 Counts of Stock Codes In Both Multi and Single Line Orders
+--- =========================================================================================================
+-- S7.2.7 Counts of Stock Codes In Multiple Line Orders Not In Single Line
+
+CREATE OR REPLACE TABLE GB_MLineStockCodes_In_SLineStockCodes AS 
+
+SELECT * FROM GB_COUNTS_PER_MStockCode
+WHERE "MStockCode"  IN 
+(SELECT "MStockCode" 
+FROM TEST_YMH.CYBER_SEC_TESTING.GB_PORMASTERDETAIL_NB_FIELDS_SINGLE_LINE)
+order by "MStockCode";
+
+select * from GB_MLineStockCodes_In_SLineStockCodes
+order by "MStockCode";
+
+
+-- SELECT DISTINCT "MStockCode" FROM GB_COUNTS_PER_MStockCode
+-- -- 44 
+
+-- --- Notes On the above Multiline Line Tables 
+
+--   Headings are ID, Insight,Order_NOs, Comment , Table
+
+--- ROUGH WORK ON COMPILING THE NOTES 
+-- 1) 'Codes in multiple lines same but differ by REG NUMBER' , 'DW0690,DW06892,DW06893,DW06958' 'Inconsistent StockCoding','GB_PorMasterDetail_NB_Fields_Multiple_Line'
+-- 2) 'Codes in multiple lines same but differ by Month','DW06889,DW06897,EW06507,KW06612','Causes Inconsistencies','GB_PorMasterDetail_NB_Fields_Multiple_Line'
+-- 3) 'Most Lines differ by vehicle description (many versions of truth)','Balance of Code' 'Inconsistencies', 'GB_PorMasterDetail_NB_Fields_Multiple_Line'
+-- 4) 'Up To 6 Lines Per Order','See Table ', 'The number of multiline orders is material','GB_LINES_PER_PO_MultilinePOTable'
+-- 5) 'Number of Unique Descriptions is Significant ','44', 'May Cause Significant ambiguities', 'GB_COUNTS_PER_MStockCode0'
+-- 6) 'Significant  descrepancies between Single and Multiline Description','41 out of 44', 'Seems different rules for Single/Multiple Lines','GB_MLineStockCodes_NotIn_SLineStockCodes'
+-- 7) 'Only 3 codes are consistent between single and Multilines', '3 out of 44', 'Should not be the case','GB_MLineStockCodes_In_SLineStockCodes'
+
+---- PUT THE ABOVE IN A TABLE OF NOTES FOR MULTILINE TABLE FACTS 
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 18.0 Notes For Multiple Line Orders 
+--- =========================================================================================================
+-- S7.2.8 Notes For Multiple Line Orders 
+
+CREATE OR REPLACE TABLE  GB_NOTES_ON_MULTILINE_ORDERS AS
+
+(SELECT 1 as ID,'Codes in multiple lines same but differ by REG NUMBER' as description , 'DW0690,DW06892,DW06893,DW06958' as Codes, 'Inconsistent StockCoding' as comments ,'GB_PorMasterDetail_NB_Fields_Multiple_Line' As Tablename from DUAL
+UNION 
+select 2,'Codes in multiple lines same but differ by Month', 'DW06889,DW06897,EW06507,KW06612','Causes Inconsistencies','GB_PorMasterDetail_NB_Fields_Multiple_Line' 
+UNION
+select 3, 'Most Lines differ by vehicle description (many versions of truth)','Balance of Code', 'Inconsistencies', 'GB_PorMasterDetail_NB_Fields_Multiple_Line'
+UNION
+select 4 , 'Up To 6 Lines Per Order','See Table ', 'The number of multiline orders is material','GB_LINES_PER_PO_MultilinePOTable'
+UNION
+select 5, 'Number of Unique Descriptions is Significant ','44', 'May Cause Significant ambiguities', 'GB_COUNTS_PER_MStockCode0'
+UNION
+select 6, 'Significant  descrepancies between Single and Multiline Description','41 out of 44', 'Seems different rules for Single/Multiple Lines','GB_MLineStockCodes_NotIn_SLineStockCodes'
+UNION
+select 7,'Only 3 codes are consistent between single and Multilines', '3 out of 44', 'Should not be the case','GB_MLineStockCodes_In_SLineStockCodes'
+order by ID);
+
+select * from GB_NOTES_ON_MULTILINE_ORDERS
+
+--------------------------------------------------------------------------------------------------------------------------
+--              THIS IS THE MULTIPLE ORDER LINE VS TIMESHEET ANALYSIS RESOLUTION ANALYSIS 
+----------------------------------------------------------------------------------------------------
+SELECT 'THIS IS THE MULTIPLE LINE ORDERs VS TIMESHEETS ANALYSIS' AS " "
+FROM DUAL;
+-------------------------------------------------------------------------
+
+
+SELECT 'THIS IS THE MULTIPLE LINE ORDER ANALYSIS' AS " "
+FROM DUAL;
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 19.0 Enriching Timesheets with Multiple Line Orders 
+--- =========================================================================================================
+-- S7.2.9 Enriching Timesheets with Multiple Line Orders (Table)
+
+--- LET DO THE INNER JOIN BETWEEN TIMESHEETS A ND THE MULTILINE ORDERS TABLE 
+
+-- TIMESHEET_TIMESHEET
+-- S7.2.9.1
+SELECT MAX(DATE) FROM TIMESHEET_TIMESHEETDAYS
+-- 2024-11-01
+--S7.2.9.2
+SELECT MIN(DATE) FROM TIMESHEET_TIMESHEETDAYS
+-- 2024-07-01
+
+--GB_PorMasterDetail_NB_Fields_Multiple_Line
+--- We neded to test whether we get all 20 orders and then find those orders that cant be found from time sheets that are not in the order table 
+--
+-- This query is sent to Dashboard 
+-- THIS QUERY JOINS THE TIMESHEETS WITH THE MULTIPLE LINE ORDERS 
+-- Note: This gives the extent of ambiguities due to the lack of adequate indexes 
+-- S7.2.9.3
+CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE AS 
+
+(SELECT A.ID, 
+        A.MODIFIED_AT, 
+        A.CREATED_AT, 
+        A.MACHINE, 
+        A.COMPANY, 
+        A.PO, 
+        A.INVOICE,
+        A.ORDER_NUMBER, 
+        A.TOTAL_HOURS, 
+        A.DAYS_PER_MONTH, 
+        A.PER_DAY, 
+        A.TOTAL, 
+        A.MONTH_YEAR, 
+        A.MONTH, 
+        A.YEAR,
+        A.VEHICLE_CODE, 
+        A.MACHINE_SUB_TYPE ,
+        B.*
+        FROM timesheet_timesheet As A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Multiple_Line as B
+        ON A.PO = B."PurchaseOrder");
+
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE
+order by PO, "Line", ID
+
+--=====SA.1 ======= INVESTITIGATE PARTICULAR ORDERS 
+-- SA.1.1 -- ORDER DW06958 Bring OUT ALL THE POSSIBLE MATCHES 
+
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE
+WHERE PO = 'DW06958'
+order by PO, "Line", ID
+
+-- RESULT IS 24 LINES 
+-- THe order has 6 lines 
+
+
+
+
+====== CONYINUE HERE 
+
+----LETS GET A VERSION OF THE TIME SHEETS THATS ONLY MULTI:INE ORDER --
+-- GB_TS_IN+MULTILINE ORDER
+
+CREATE OR REPLACE TABLE GB_TIMESHEET_IN_MULTILINE_ORDERS AS 
+
+(select * from TIMESHEET_TIMESHEET
+WHERE PO in (SELECT "PurchaseOrder"  FROM GB_PORMASTERDETAIL_NB_FIELDS_MULTIPLE_LINE)
+)
+
+select * from GB_TIMESHEET_IN_MULTILINE_ORDERS
+--60
+--
+
+--- WE NOW HAVE A TABLE OF THETIMESHEETS ONLY IN MULTIPLE LINE ORDERS 
+--- Lets Look at the worst case scenario of this confusion 
+
+-- First Look at the Time sheets per order and conts 
+
+
+--------------TIMESHEET ANALYSIS (ONLY MULTILINE ORDERS ------)
+
+-- Get the total number of lines in this file 
+
+select * from GB_TIMESHEET_IN_MULTILINE_ORDERS
+-- 60 lines , reference 
+
+
+
+
+---- Let us see if PO,ID,Date and Car are distinct 
+-- GB_TIMESHEETS_PER_ORDER_MULTILINE
+select DISTINCT PO,ID,MONTH_YEAR,VEHICLE_CODE FROM GB_TIMESHEET_IN_MULTILINE_ORDERS
+order by PO,ID,MONTH_YEAR,VEHICLE_CODE
+-- 60 lines : YES , 
+
+
+-- SELECT IF ID and MONTH YEAR ARE DISTINCT IN TIMESHEETS
+SELECT ID , COUNT(*) as Count_Months 
+FROM GB_TIMESHEET_IN_MULTILINE_ORDERS
+GROUP BY ID 
+HAVING Count_Months >1
+order by ID;
+-- 60 -- YES : No results meaning timesheet ID is only linked to 1 month
+
+---Lets see if the Vedicles Are linked to many timesheets in the same months
+
+-- First lets see if we can get a mapping of vehicles to ID so how many vhicles in a timesheet
+--
+select ID, count(DISTINCT VEHICLE_CODE) as Car_Code_Cnt
+FROM GB_TIMESHEET_IN_MULTILINE_ORDERS
+GROUP BY ID 
+ORDER BY Car_Code_Cnt DESC
+
+-- So one Timeshet can onle be 1 car 
+-- SO WE CAN HAVE A TABLE LINKING ID TO CAR 
+\--
+
+--- ID TO CAR OR CAR TO ID , Car to ID can be 1 to Many 
+
+
+-------------------------LETS DO SOME ANALYSIS OF FieldsRELATED TO TEST_YMH.CYBER_SEC_TESTING."GrnDetails_PROD_ERGO"
+-- Lets Choose Some Fields and filter related to multiple order field ---
+--- We choose these fields only for multiple orders 
+--- we wil also choose single orders and enrich both multiple and sigle with the fields 
+
+---We JOIN MORE DETAILS to the MULTILINE PO FILE -- 
+
+SELECT * FROM TEST_YMH.CYBER_SEC_TESTING."GrnDetails_PROD_ERGO"
+LIMIT 100
+
+/*-----WE FILTER THE GRN TABLE USING A FEW NB COLUMNS FOR ORDERS IN MULTILINE ORDERS TABLE --- */ 
+/* WE WILL JOIN TO MULTILINE TABLE */
+/* COMPARE THE DESCRIPTIONS WE HAVE AND SEE IF MORE CONTANT OR THE SAME */
+
+CREATE OR REPLACE TABLE GB_GRN_ORDERS_IN_MULTILINE_ORDERS_TABLE AS 
+
+SELECT  "PurchaseOrder",
+         "PurchaseOrderLin",
+         "StockCode",
+         "OrigReceiptDate",
+         "OrigGrnValue",
+         "CurGrnValue",
+         "MatchedValue",
+         "StdGrnValue",
+         "OrigPurchValue"
+         FROM TEST_YMH.CYBER_SEC_TESTING."GrnDetails_PROD_ERGO"
+         WHERE "PurchaseOrder" in (SELECT "PurchaseOrder"  FROM GB_PORMASTERDETAIL_NB_FIELDS_MULTIPLE_LINE)
+         AND "StockCode" Not Like '%Site%' AND "StockCode" NOT LIKE '%SITE%' AND "StockCode" NOT LIKE '%LABOUR'
+         AND "StockCode" NOT LIKE '%LABOUR%'
+
+SELECT COUNT(*) FROM GB_GRN_ORDERS_IN_MULTILINE_ORDERS_TABLE
+-- 60--
+
+SELECT * FROM GB_GRN_ORDERS_IN_MULTILINE_ORDERS_TABLE
+order by "PurchaseOrder"
+
+
+SELECT COUNT(DISTINCT "PurchaseOrder") FROM GB_GRN_ORDERS_IN_MULTILINE_ORDERS_TABLE
+-- 20 Agrees---
+
+--- We DO SAME FOR SINGLE LINE ---
+
+
+
+
+/*"Supplier", "Grn", "GrnSource", "Journal", "JournalEntry", "OrigReceiptDate", "DebitRecGlCode", "GrnYear", "GrnMonth", "PurchaseOrder", "PurchaseOrderLin", "StockCode", "StockDescription", "SupCatalogueNum", "Warehouse", "QtyReceived", "QtyUom", "Decimals", "Job", "SubcontractOp", "DeliveryNote", "SourceCode", "OrigGrnValue", "CurGrnValue", "MatchedValue", "StdGrnValue", "PriceVarPrinted", "AuditTrailPrintd", "GrnMatchedFlag", "ProductClass", "GrnMatchedYear", "GrnMatchedMonth", "OrigPurchValue", "CostMultFlag", "CurrencyValue", "PostCurrency", "ConvRate", "MulDiv", "AccountCur", "AccConvRate", "AccMulDiv", "TriangCurrency", "TriangRate", "TriangMulDiv", "MTaxCode", "TimeStamp", "WithTaxExpenseType", "TariffCode"*/
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------
+--- THE ABOVE QURY IS SENT TO DASHBOARD 
+-------------------------------------------------------------------
+
+select count(*) from  GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE
+---- 186 
+
+
+-- To compare we want the distinct pos from the Multiline POs from the Purchase Order Table 
+select count(distinct "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Multiple_Line
+-- There are 20 as of date 16/10 
+
+--- we sould have 20 distinct in in the join 
+select count(distinct "PurchaseOrder") from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE 
+-- 20 ... so all pos in multiline are found in timesheets 
+
+---------------------------------------------------------------------
+--- Lets do the counts of lines per PO in the Muililine PO
+---
+select * from GB_LINES_PER_PO_MultilinePOTable
+order by counts DESC
+
+/*PurchaseOrder	COUNTS
+DW06958	6
+DW06890	5
+EW21519	4
+EW21293	4
+KW06507	3
+DW06897	3
+EW21551	3
+DW06889	3
+DW06892	3
+EW21103	3
+DW07095	2
+EW21364	2
+EW20574	2
+EW21100	2
+KW06541	2
+EW21259	2
+KW06612	2
+EW21601	2
+KW06583	2
+DW06893	2*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--- MISCELLAQNEOUS CHECH OF INVOICES AND POS IN THE TIMESHEET TABLE .. 
+-- ARE THE TIMESHEETS AND POS 1 to 1 
+
+
+
+
+
+
+
+
+
+SELECT DISTINCT "PurchaseOrder" FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+
+SELECT 'THIS IS THE MULTIPLE LINE ORDER ANALYSIS' AS Description_of_Analysis FROM DUAL;
+
+SELECT '<center>THIS IS THE MULTIPLE LINE ORDER ANALYSIS</center>' AS " "
+FROM DUAL;
+
+Reference
+KW06468
+KW06449
+EN12131
+EN12217
+PW03571
+EW20839
+EW20760
+PW03514
+KW06578
+KW06577
+
+
+
+
+
+
+/*==============================================================================*/
+------ Just a quck investigation if there are Fields in the Invoice table that can be of use  ---
+
+/*-----------LOOK AT INVOICES VERSUS ORDERR   -----------------------*/
+/*  Lets Just See whats in the Invoice Tables --- */
+
+select * from TEST_YMH.CYBER_SEC_TESTING."ApInvoice_PROD_ERGO"
+limit 10 
+
+
+select count(*) from TEST_YMH.CYBER_SEC_TESTING."ApInvoice_PROD_ERGO"
+-- 9142
+
+--- So lets extract all the invoices related to the orders in the timesheets that are in the order table 
+
+
+/--------------WE ARE GOING TO SEPARATE OUT MULTILINE POS FRRO..We did this Above 
+/--- Checking for multiline purchase orders ---/
+select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+Group By "PurchaseOrder"
+Having Counts >1
+
+-- Result of the above Shows many Multil;ine purchase Orders ---
+
+
+----------------------------TAKE THE TIMESHEET DATA AND DO AN INNER JOIN WITH THE NEW SINGLE LINE ORDER TABLE ----
+
+--- First do comparison checks to see thedistinct orders in each table 
+
+select count(distinct "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Single_Line
+--86 as above
+
+--- JUST REPEAT THE COUNTS FOR MULTILINE 
+
+select count(DISTINCT "PurchaseOrder") from GB_PorMasterDetail_NB_Fields_Multiple_Line
+--20
+
+
+select count(distinct PO) FROM TIMESHEET_TIMESHEET
+---122 In Total , so that would be for multiline and single line 
+
+-- So ideally we want these 122 order details in the time sheets 
+
+
+
+
+select A.* , B.MACHINE_FIXED 
+FROM GB_PorMasterDetail_NB_Fields_Multiple_Line as A 
+left join GB_Mstock_Code_Machine_Mapping as B
+on A."MStockCode" = B."MStockCode"
+
+CREATE OR REPLACE TABLE GB_Multiple_line_Orders_w_Machine_Description AS
+(
+select A.* , B.MACHINE_FIXED 
+FROM GB_PorMasterDetail_NB_Fields_Multiple_Line as A 
+left join GB_Mstock_Code_Machine_Mapping as B
+on A."MStockCode" = B."MStockCode"
+)
+
+select count(*) from GB_PorMasterDetail_NB_Fields_Multiple_Line
+-- 57
+
+select count(*) from GB_Multiple_line_Orders_w_Machine_Description
+--67
+
+
+
+
+CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE AS 
+
+(SELECT A.ID, 
+        A.MODIFIED_AT, 
+        A.CREATED_AT, 
+        A.MACHINE, 
+        A.COMPANY, 
+        A.PO, 
+        A.INVOICE,
+        A.ORDER_NUMBER, 
+        A.TOTAL_HOURS, 
+        A.DAYS_PER_MONTH, 
+        A.PER_DAY, 
+        A.TOTAL, 
+        A.MONTH_YEAR, 
+        A.MONTH, 
+        A.YEAR,
+        A.VEHICLE_CODE, 
+        A.MACHINE_SUB_TYPE ,
+        B.*
+        FROM timesheet_timesheet As A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Single_Line as B
+        ON A.PO = B."PurchaseOrder")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*-------------------------------------------------------------------------------------------*/
+
+/* Extract Some Important Fields FRom PorMasterHdr  */
+
+select * from TEST_YMH.CYBER_SEC_TESTING."PorMasterHdr_PROD_ERGO"
+
+-- 5.1 K 
+
+select count (distinct "PurchaseOrder") from TEST_YMH.CYBER_SEC_TESTING."PorMasterHdr_PROD_ERGO" 
+-- 5061
+-- So there are duplicates of 39  -- Why ?
+
+select distinct "PurchaseOrder","OrderEntryDate"  FROM "PorMasterHdr_PROD_ERGO"
+-- 5.1K 
+
+-- so we need to get all the entries but only thre 
+
+select distinct "Supplier" FROM "PorMasterHdr_PROD_ERGO" -- 308
+
+--- Lets Filter This File First with only the order numbers in the Table Above and see the number \
+-- we then check for duplicates -- stricly speaking there should oinly be 408 distinct purchase orders
+
+
+select count(distinct "PurchaseOrder") from   -- 394
+
+(select distinct "PurchaseOrder","OrderEntryDate","OrderDueDate","Supplier" FROM "PorMasterHdr_PROD_ERGO" --5.1K
+where "PurchaseOrder" in (Select "PurchaseOrder" from GB_PorMasterDetail_NB_Fields_Distinct));--394
+
+-- Lets see how many suppliers are there from the above 
+
+select count(distinct "Supplier") from   --15
+
+(select distinct "PurchaseOrder","OrderEntryDate","OrderDueDate","Supplier" FROM "PorMasterHdr_PROD_ERGO" --5.1K
+where "PurchaseOrder" in (Select "PurchaseOrder" from GB_PorMasterDetail_NB_Fields_Distinct));--394
+
+-- Lets see the counts of these suppliers by their order numbers 
+
+
+
+
+select "Supplier", count(distinct "PurchaseOrder") NoOfOrders from  
+
+(select distinct "PurchaseOrder","OrderEntryDate","OrderDueDate","Supplier" FROM "PorMasterHdr_PROD_ERGO" --5.1K
+where "PurchaseOrder" in (Select "PurchaseOrder" from GB_PorMasterDetail_NB_Fields_Distinct))
+
+Group BY "Supplier"
+order by NoOfOrders DESC
+
+
+
+---- Lets Create a Table of the distinct Important Fields From  "PorMasterHdr_PROD_ERGO" as above for _PorMasterDetail
+--- we hope to join these to the above table and we are only interested in those orders consistent with Hire orders above  --
+---
+
+CREATE OR REPLACE TABLE GB_PorMasterHdr_NB_Fields_Distinct AS
+
+(select distinct "PurchaseOrder","OrderEntryDate","OrderDueDate","Supplier" FROM "PorMasterHdr_PROD_ERGO" 
+where "PurchaseOrder" in (Select "PurchaseOrder" from GB_PorMasterDetail_NB_Fields_Distinct)
+)
+
+select * from  GB_PorMasterHdr_NB_Fields_Distinct
+select count(*) FROM GB_PorMasterHdr_NB_Fields_Distinct --394
+
+select count(distinct "PurchaseOrder")  FROM GB_PorMasterHdr_NB_Fields_Distinct --394
+
+--- Now we can join these two tables , to add extra field to our table 
+
+--- We join on the left the table summary of PorMasterDetails to Table summary of PorMasterHdr
+
+--- We now have supplier added to MasterDetail. 
+
+----  JOIN THE TWO TABLES --- Called GB_PORMASTERDETAIL_HDR_SUMMARY
+
+
+CREATE OR REPLACE TABLE GB_PORMASTERDETAIL_HDR_SUMMARY AS 
+
+SELECT A."PurchaseOrder",A."Line" ,A."MLatestDueDate",A."MLastReceiptDat",A."MStockCode",A."MStockDes",A."MPrice"   ,B."OrderEntryDate",B."OrderDueDate",B."Supplier"  
+FROM GB_PORMASTERDETAIL_NB_FIELDS_DISTINCT as A
+LEFT JOIN GB_PORMASTERHDR_NB_FIELDS_DISTINCT as B 
+ON A."PurchaseOrder" = B."PurchaseOrder"
+ORDER BY "PurchaseOrder"
+
+select * from GB_PORMASTERDETAIL_HDR_SUMMARY
+
+--- Some Facts 
+
+select count(*) from GB_PORMASTERDETAIL_HDR_SUMMARY --519
+
+select count(distinct "PurchaseOrder") from GB_PORMASTERDETAIL_HDR_SUMMARY ---408
+
+/*--- Interesting Facts on Above Table : GB_PORMASTERDETAIL_HDR_SUMMARY-----------------------------------*/
+
+/* 1. The SIZE of the ORDERS PER SUPPLIER and distict counts of  */
+
+/* Based on Word Hire */
+
+/*----- We may have to filter this table to get suppliers based on orders from the main 3 telematics ---*/
+
+/* we name the table GB_PORMASTERDETAIL_HDR_SUMMARY_MiscCounts */
+
+CREATE TABLE GB_PORMASTERDETAIL_HDR_SUMMARY_MiscCounts as 
+
+(SELECT "Supplier", Count(Distinct "PurchaseOrder") As Dstnct_Orders, Count(*) as LineItems, Count(DISTINCT "MStockCode") as Dstnct_StockCodes,
+       Count(Distinct "MStockDes") as Dstnct_StockDes
+FROM GB_PORMASTERDETAIL_HDR_SUMMARY
+GROUP BY "Supplier"
+ORDER BY Dstnct_Orders DESC )
+
+SELECT * FROM GB_PORMASTERDETAIL_HDR_SUMMARY_MiscCounts
+ORDER BY Dstnct_Orders DESC
+
+-- NB .. ALMOST 1: 1 on the PO vs STOCKDES
+---       Many times More than 1 line item per order 
+---      Each of the Stockcodes have many StockDes
+
+
+/*--- Lets llok for a tie up betweeen supplier codes and Vehicles */
+
+/*   REDTOP TELEMATICS */
+
+--select distinct OPERATOR_NAME FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS
+
+--- No read ID of vehicle to supplier code 
+
+select * from TIMESHEET_TIMESHEET
+
+-- We have many things in the time sheet that we can link to the machines 
+
+--- LETS MAP FROM TIME$SHEETS LETS DO SOME THINGS --
+select count(*) from TIMESHEET_TIMESHEET
+
+-- 1) lets see if the PO andf INVOICES and order numbers have a 1 : 1 mapping 
+
+--- Store away in GB_TIMESHEET_CNTS_PO_INV_IDS_ORDNUM
+
+CREATE TABLE GB_TIMESHEET_CNTS_PO_INV_IDS_ORDNUM AS 
+
+select count (distinct ID) as Dstnct_ID, count (distinct INVOICE) as dstnct_Invs, count(distinct PO) as dstnct_PO, Count(distinct ORDER_NUMBER) as Dstnct_OrdNum
+FROM TIMESHEET_TIMESHEET
+
+SELECT * FROM GB_TIMESHEET_CNTS_PO_INV_IDS_ORDNUM
+
+-- Filter the PO TABLE ABOVE For only the POs in this Timesheety Table 
+
+-- so Now we filter the POS for the Ones in the Timsheet
+
+---
+select count(*) from GB_PORMASTERDETAIL_HDR_SUMMARY --519
+
+--- so trhere are 519 line items before filtering 
+select count(distinct "PurchaseOrder") from GB_PORMASTERDETAIL_HDR_SUMMARY -- 408
+
+-- SO LETS SEE THE RESULT OF THE FILTERING BASED ON PO IN TSHEET
+
+CREATE OR REPLACE TABLE GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS AS 
+
+select * from GB_PORMASTERDETAIL_HDR_SUMMARY
+where "PurchaseOrder" in (select PO from timesheet_timesheet)
+
+SELECT COUNT(*) FROM GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS --95
+
+SELECT COUNT(DISTINCT "PurchaseOrder") FROM  GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS
+--73
+
+select * from GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS order by "PurchaseOrder","Line" --92 rows
+
+-- We need to join this up to the trime sheet table 
+
+---- LETS NOW LOOK AT THE NUMBER OF SUPPLIERS ---
+
+select COUNT(DISTINCT "Supplier") FROM GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS
+--2
+
+select DISTINCT "Supplier" FROM GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS
+--010R
+--004Q
+
+select * from GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS order by "PurchaseOrder","Line"
+
+
+
+
+
+-- we have 122 POs in TSHEET FILE , ONLY 95 of the are in the ;PORMASTERDeatailHdr Summary 
+
+Select count(*) FROM 
+(SELECT DISTINCT PO, INVOICE,ORDER_NUMBER FROM TIMESHEET_TIMESHEET)
+--136.
+
+--- LETS LOOK AT THE ONES WITH MULTIPLE LINE ITEMS IN THE PorMasterDetail
+
+SELECT "PurchaseOrder","Line","MLatestDueDate" , ,"MStockCode","MStockDes"
+FROM  GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS
+where "PurchaseOrder" in (select "PurchaseOrder" 
+                          FROM  (select "PurchaseOrder" , Count(*) as Counts 
+                                FROM GB_PORMASTERDETAIL_HDR_SUMMARY_W_TSHEETS
+                                group by "PurchaseOrder"
+                                having Counts > 1 )
+                                )
+ORDER BY "PurchaseOrder","Line"
+
+
+
+
+-------------------------------- WHICH COLUMNS FROM TIME SHEET MUSYT I BRING IN -------
+--- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

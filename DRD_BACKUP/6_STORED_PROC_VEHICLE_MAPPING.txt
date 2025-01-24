@@ -1,0 +1,161 @@
+/* CREATING A STORED PROCEDURE FOR MAPPING VEHICLES */
+
+CREATE OR REPLACE PROCEDURE GENERATE_VEHICLE_MATCHING_TABLES()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Table 1: Matching Vehicle Numbers (Distinct matches between Timesheet and Supplier Tables)
+    CREATE OR REPLACE TABLE MATCHING_VEHICLE_NUMBERS AS
+    WITH supplier_mappings AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY LIKE 'KLT Machinery%' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    )
+    SELECT 
+        Supplier,
+        COUNT(DISTINCT VEHICLE_CODE) AS Matches
+    FROM (
+        SELECT 
+            m.Supplier, 
+            m.VEHICLE_CODE
+        FROM supplier_mappings m
+        JOIN (
+            SELECT 'REDTOP' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+            UNION ALL
+            SELECT 'QUARTZ', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+            UNION ALL
+            SELECT 'KLT', REGISTRATION_NUMBER FROM KLT_TELEMATICS
+        ) t ON m.Supplier = t.Supplier AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER
+    )
+    GROUP BY Supplier;
+
+    -- Table 2: Vehicles in Timesheet Not in Supplier Table
+    CREATE OR REPLACE TABLE IN_TIMESHEET_NOT_SUPPLIER AS
+    WITH supplier_mappings AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY LIKE 'KLT Machinery%' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    )
+    SELECT 
+        Supplier,
+        VEHICLE_CODE AS In_Timsheet_Not_Supplier
+    FROM (
+        SELECT 
+            m.Supplier, 
+            m.VEHICLE_CODE
+        FROM supplier_mappings m
+        LEFT JOIN (
+            SELECT 'REDTOP' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+            UNION ALL
+            SELECT 'QUARTZ', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+            UNION ALL
+            SELECT 'KLT', REGISTRATION_NUMBER FROM KLT_TELEMATICS
+        ) t ON m.Supplier = t.Supplier AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER
+        WHERE t.REGISTRATION_NUMBER IS NULL
+    );
+
+    -- Table 3: Summary of Matching and Non-Matching Vehicles
+    CREATE OR REPLACE TABLE VEHICLE_MATCH_SUMMARY AS
+    WITH 
+    matches AS (
+        SELECT * FROM MATCHING_VEHICLE_NUMBERS
+    ),
+    non_matches AS (
+        SELECT 
+            Supplier, 
+            COUNT(DISTINCT In_Timsheet_Not_Supplier) AS Cnts_In_Ts_Not_Supplier
+        FROM IN_TIMESHEET_NOT_SUPPLIER
+        GROUP BY Supplier
+    ),
+    total_timesheets AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY LIKE 'KLT Machinery%' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            COUNT(DISTINCT VEHICLE_CODE) AS Total_Vehicles
+        FROM TIMESHEET_TIMESHEET
+        GROUP BY Supplier
+    )
+    SELECT 
+        COALESCE(m.Supplier, n.Supplier, t.Supplier) AS Supplier,
+        t.Total_Vehicles AS Cnts_In_TS_In_Supplier,
+        COALESCE(n.Cnts_In_Ts_Not_Supplier, 0) AS Cnts_In_Ts_Not_Supplier
+    FROM total_timesheets t
+    LEFT JOIN matches m ON t.Supplier = m.Supplier
+    LEFT JOIN non_matches n ON t.Supplier = n.Supplier;
+
+    -- Optional: Table 4 - Vehicles in Supplier Table Not in Timesheet
+    CREATE OR REPLACE TABLE IN_SUPPLIER_NOT_TIMESHEET AS
+    WITH supplier_mappings AS (
+        SELECT 
+            'REDTOP' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+            UNION ALL
+            SELECT 'QUARTZ', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+            UNION ALL
+            SELECT 'KLT', REGISTRATION_NUMBER FROM KLT_TELEMATICS
+    ),
+    timesheet_mappings AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = 'Quartz Plant Hire' THEN 'QUARTZ'
+                WHEN COMPANY LIKE 'KLT Machinery%' THEN 'KLT'
+                WHEN COMPANY = 'Red Top Asset Management' THEN 'REDTOP'
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    )
+    SELECT 
+        s.Supplier,
+        s.REGISTRATION_NUMBER AS In_Supplier_Not_Timesheet
+    FROM supplier_mappings s
+    LEFT JOIN timesheet_mappings t 
+        ON s.Supplier = t.Supplier AND s.REGISTRATION_NUMBER = t.VEHICLE_CODE
+    WHERE t.VEHICLE_CODE IS NULL;
+
+    result_msg := 'Successfully created vehicle matching tables';
+    RETURN result_msg;
+END;
+$$;
+
+-- Procedure to execute the table generation
+CREATE OR REPLACE PROCEDURE EXECUTE_VEHICLE_MATCHING()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result STRING;
+BEGIN
+    result := (CALL GENERATE_VEHICLE_MATCHING_TABLES());
+    RETURN result;
+END;
+$$;
+
+-- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM MATCHING_VEHICLE_NUMBERS
+
+SELECT * FROM IN_TIMESHEET_NOT_SUPPLIER
+order by SUPPLIER
+
+SELECT * FROM  VEHICLE_MATCH_SUMMARY 
+ORDER BY SUPPLIER
+
+

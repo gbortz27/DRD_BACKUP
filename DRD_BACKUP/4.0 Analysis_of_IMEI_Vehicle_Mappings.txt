@@ -1,0 +1,251 @@
+--=======================================================================================
+-- ANALYSIS OF MAPPINGS FROM VEHICLE REGISTRATION NUMBERS TO IMEI NUMBERS FOR REDTOP
+-----------------------------------------------------------------------------------------------
+--- Lets Bring in the REGISTRATION NUMER MAPPING TO IMEI FOR ALL SUPPLIERS -----
+-----------------------------------------------------------------------------------------
+
+--- We DO SUPPLIER FOR SUPPLIER -- 
+
+SELECT 'ANALYSIS FOR REDTOP IMEI VS REDTOP' FROM DUAL 
+
+--
+
+-- S1.0  Getting Beginning Of MONTH ---
+SELECT DISTINCT DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM REDTOP_TELEMATICS
+limit 20
+
+--- GETTING THE DISTINCT  EMEI VEHICLE CODE MAPPINGS  BY MONTH
+---- Note: The mappings may not be pure distinct ,.. to catch the 1 vehicle using many EMEI's
+
+--==========================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 1.0 Distinct Red Top IMEI / Registration Number Mappings
+--=================================================
+-- S2.0  Get the distinct Red Top IMEI Mappings  ---  
+
+
+CREATE OR REPLACE TABLE GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS AS 
+SELECT DISTINCT 'Red Top Asset Management' as Supplier,REGISTRATION_NUMBER,IMEI,
+                        DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM REDTOP_TELEMATICS
+WHERE REGISTRATION_NUMBER IN (SELECT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+ORDER BY REGISTRATION_NUMBER;
+
+SELECT * FROM GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH
+
+-- Checks of the above 
+-- S2.1 There are 17 Distinct Vehicles in Redtop that are in TSHEETS
+select distinct REGISTRATION_NUMBER from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--15
+
+-- S2.2 select distnct Imeis
+select distinct IMEI from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 17 - there must be multiple Imeis per Regnumber ie 17 against 15 
+
+-- S2.3 select distinct co0mbo reg number and Imeis
+
+select distinct REGISTRATION_NUMBER , IMEI from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--17
+
+-- So because there are multiple IMEIs PEr VEHICLE TO GET DUSTINCT , MONTH Must be used in a mapping 
+
+-- S2.4 Select Total lines 
+select distinct REGISTRATION_NUMBER , IMEI, BEGIN_MONTH from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 61
+
+--- Find out where there are a number of EMEI's Per VEHICLE--
+
+--==========================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 2.0 Counts of Distinct IMEIs PER REG. Red Top
+--=================================================
+-- S2.5  Get the distinct Counts  Red Top IMEI Mappings  ---  
+
+CREATE OR REPLACE TABLE GB_COUNTS_IMIE_PER_VEHICLE_REDTOP AS
+SELECT REGISTRATION_NUMBER , COUNT(DISTINCT IMEI) as Dstnct_Imei FROM
+GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY REGISTRATION_NUMBER
+ORDER BY Dstnct_Imei DESC
+
+--- Distinct Counts Of Imei's Per Reg Number 
+SELECT * FROM GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+ORDER BY DSTNCT_IMEI DESC
+
+--- There is one vehicle that changed IMEI's 3 X ie EE2
+--- We know that the Count>1 .. we catch the culprit with the month of chanjge 
+
+
+--=============================================================================================
+
+-- S2.6
+select REGISTRATION_NUMBER from GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+where Dstnct_Imei >1
+
+--===========================================================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 3.0 Multiple IMEIs Per Vehicle Red Top
+--===============================================================================================
+-- S2.7 Multiple IMEIs Per Vehicle  ---  
+
+-- NOW WE SELECT THE REGISTRATION NUMBER , the IMEI , and the MONTH where Number of EIMEI's > 1 
+
+-- STORE THE RESULTS OF CAPTURING THE CHAGING IMEI 
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_IMEIS_PER_VEHICLE_REDTOP AS
+
+select * from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_IMIE_PER_VEHICLE_REDTOP
+where Dstnct_Imei >1 )
+order by IMEI,BEGIN_MONTH;
+
+SELECT * FROM GB_MULTIPLE_IMEIS_PER_VEHICLE_REDTOP;
+
+--===================================================================================
+
+
+--===========================================================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 4.0 Counts of Vehicles Per IMEI
+--===============================================================================================
+-- S2.8 Multiple Vehicles Per IMEI  ---  
+
+-- NOW WE SELECT THE REGISTRATION NUMBER , the IMEI , and the MONTH where Number of EIMEI's > 1 
+
+-- STORE THE RESULTS OF CAPTURING THE CHAGING IMEI 
+
+-- INVERT THE ANALYSIS ABOVE -- COUNT THE VEHICLES PER IMEI
+CREATE OR REPLACE TABLE GB_COUNTS_VEHICLES_PER_IMEI_REDTOP AS
+SELECT IMEI , COUNT(DISTINCT REGISTRATION_NUMBER) as Dstnct_RegNum FROM
+GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY IMEI
+ORDER BY Dstnct_RegNum DESC;
+
+
+SELECT * FROM GB_COUNTS_VEHICLES_PER_IMEI_REDTOP
+ORDER BY Dstnct_RegNum DESC
+-- 17 So no IMEI is used on multiple vehicles
+
+--===============================================================================================
+-- CAPTURE THE IMEIs with Multiple Vehicles
+
+--===========================================================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 4.0 Capture Vehicles Per IMEI
+--===============================================================================================
+-- S2.9 Multiple Vehicles Per IMEI  ---  
+
+-
+CREATE OR REPLACE TABLE GB_MULTIPLE_Vehicles_PER_IMEI_REDTOP AS
+
+select * from GB_REDTOP_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_VEHICLES_PER_IMEI_REDTOP
+where Dstnct_RegNum >1 )
+order by IMEI,BEGIN_MONTH
+
+SELECT * FROM GB_MULTIPLE_Vehicles_PER_IMEI_REDTOP
+
+
+-- ========================================== END OF REDTOP =========================== --
+
+
+--======================= DO SAME FOR QUARZ==========================================
+
+---LETS DO THE SAME ANALYSIS FOR QUARZ 
+
+--- ANALYSIS FOR QUARZ
+
+-- Getting Beginning Of MONTH ---
+-- S 3.0 SELECT DISTINCT DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM TEST_YMH.CYBER_SEC_TESTING.QUARTZ_TELEMATICS
+limit 20
+
+--- GETTING THE DISTINCT  EMEI VEHICLE CODE MAPPINGS  BY MONTH
+---- Note: The mappings may not be pure distinct ,.. to catch the 1 vehicle using many EMEI's
+
+
+--===============================================================================================
+-- CAPTURE THE IMEIs with Multiple Vehicles
+
+--===========================================================================================
+--- DB: 4.0 Analysis_of_IMEI_Vehicle_Mappingss --- Chart: 1.0 Distinct Red Top IMEI / Registration Number Mappings
+--===============================================================================================
+-- S3.0 Multiple Vehicles Per IMEI  ---  
+
+CREATE OR REPLACE TABLE GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS AS 
+SELECT DISTINCT 'Quartz Plant Hire' as Supplier,REGISTRATION_NUMBER,IMEI,
+                        DATE_TRUNC('month',CAST(TRIP_DATE AS DATE)) AS BEGIN_MONTH FROM TEST_YMH.CYBER_SEC_TESTING.QUARTZ_TELEMATICS
+WHERE REGISTRATION_NUMBER IN (SELECT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+ORDER BY REGISTRATION_NUMBER;
+
+SELECT * FROM GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH;
+
+-- Checks of the above 
+-- There are 17 Distinct Vehicles in Redtop that are in TSHEETS
+select distinct REGISTRATION_NUMBER from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--19
+
+-- select distnct Imeis
+select distinct IMEI from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 21 - there must be multiple Imeis per Regnumber ie 17 against 15 
+
+-- select distinct co0mbo reg number and Imeis
+
+select distinct REGISTRATION_NUMBER , IMEI from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+--21
+
+-- So because there are multiple IMEIs PEr VEHICLE TO GET DUSTINCT , MONTH Must be used in a mapping 
+
+-- Select Total lines 
+select distinct REGISTRATION_NUMBER , IMEI, BEGIN_MONTH from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+-- 86
+
+--- Find out where there are a number of EMEI's Per VEHICLE--
+CREATE OR REPLACE TABLE GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ AS
+SELECT REGISTRATION_NUMBER , COUNT(DISTINCT IMEI) as Dstnct_Imei FROM
+GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY REGISTRATION_NUMBER
+ORDER BY Dstnct_Imei DESC
+
+--- Distinct Counts Of Imei's Per Reg Number 
+SELECT * FROM GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ
+ORDER BY DSTNCT_IMEI DESC
+
+-- IDENTIFY THE VEHICLES AND WHEN THIS TOOK PLACE 
+--
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_IMEIS_PER_VEHICLE_QUARZ AS
+
+SELECT * FROM GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+WHERE REGISTRATION_NUMBER in (SELECT REGISTRATION_NUMBER FROM GB_COUNTS_IMIE_PER_VEHICLE_QUARTZ
+                                   Where Dstnct_Imei> 1)
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH , IMEI;
+
+SELECT * FROM GB_MULTIPLE_IMEIS_PER_VEHICLE_QUARZ
+ORDER BY REGISTRATION_NUMBER,BEGIN_MONTH , IMEI;
+
+
+--- There are some Vehicles thyat had multiple IMEIS
+
+-- INVERT THE ANALYSIS ABOVE -- COUNT THE VEHICLES PER IMEI
+CREATE OR REPLACE TABLE GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ AS
+SELECT IMEI , COUNT(DISTINCT REGISTRATION_NUMBER) as Dstnct_RegNum FROM
+GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+GROUP BY IMEI
+ORDER BY Dstnct_RegNum DESC;
+
+
+SELECT * FROM GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ
+ORDER BY Dstnct_RegNum DESC
+-- 17 So no IMEI is used on multiple vehicles
+
+
+CREATE OR REPLACE TABLE GB_MULTIPLE_Vehicles_PER_IMEI_QUARTZ AS
+
+select * from GB_QUARTZ_REGNO_IMEI_MAPPING_FOR_TSHEETS
+where REGISTRATION_NUMBER in 
+(select REGISTRATION_NUMBER from GB_COUNTS_VEHICLES_PER_IMEI_QUARTZ
+where Dstnct_RegNum >1 )
+order by IMEI,BEGIN_MONTH
+
+SELECT * FROM GB_MULTIPLE_Vehicles_PER_IMEI_QUARTZ
+
+
+
+

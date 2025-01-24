@@ -1,0 +1,48 @@
+# The Snowpark package is required for Python Worksheets. 
+# You can add more packages by selecting them using the Packages control and then importing them.
+
+
+
+
+# The Snowpark package is required for Python Worksheets. 
+# You can add more packages by selecting them using the Packages control and then importing them.
+from snowflake.snowpark import Session
+import snowflake.snowpark as snowpark
+from snowflake.snowpark.functions import col
+import pandas as pd
+import random
+
+def main(session: snowpark.Session): 
+    # Define the table name where data will be stored
+    tableName = 'DASHBOARD_DATA'
+    
+    # Generate the data
+    categories = ['Electronics', 'Clothing', 'Groceries', 'Books', 'Home & Kitchen']
+    data = {
+        'year': [random.randint(2015, 2024) for _ in range(1000)],
+        'month': [random.choice(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']) for _ in range(1000)],
+        'category': [random.choice(categories) for _ in range(1000)],
+        'profit': [random.randint(100, 10000) for _ in range(1000)],
+        'sales': [random.randint(10, 1000) for _ in range(1000)],
+        'customers': [random.randint(1, 100) for _ in range(1000)],
+        'revenue': [random.randint(1000, 50000) for _ in range(1000)]
+    }
+
+    # Create a Pandas DataFrame
+    df = pd.DataFrame(data)
+
+    # Upload DataFrame to Snowflake
+    session.write_pandas(df, tableName, auto_create_table=True)
+
+    # Load the table to ensure it is created and display a sample
+    dataframe = session.table(tableName)
+
+    dataframe1 = session.table("TEST_YMH.CYBER_SEC_TESTING.EMPLOYEES")
+    
+    # Print a sample of the dataframe to standard output
+    dataframe1.show()
+
+    # Return the Snowpark DataFrame for further processing
+    return dataframe1
+
+
