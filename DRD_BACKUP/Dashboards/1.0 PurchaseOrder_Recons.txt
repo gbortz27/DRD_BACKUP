@@ -1,0 +1,217 @@
+1.0 Row&DstnctCntsForPOsOrderTable
+
+/* This stored procedure named Create_GB_PorMaster_Summary_Counts will create or replace the GB_PorMaster_Summary_Counts table 
+with your desired counts and calculations.
+
+You can execute this stored procedure using: */
+-- S5.2.1 Call the Procedure 
+--
+CALL Create_GB_PorMaster_Summary_Counts();
+
+-- S5.2.2 Generatae the table for the Summaries of counts 
+
+--select * from GB_PorMaster_Summary_Counts
+
+--------------------------------------------------------------------------------
+--Count(Distinct PO) FROM TIMESHEETS
+
+select * FROM GB_PorMaster_Summary_Counts 
+ORDER BY TABLE_NAME,DESCRIPTION
+
+
+===============================================================================================
+2.0 NoteOnSingleLinePOS
+
+---- These will not be inj the stored proc as theay are based on descr5ibing on the fly and can be changed or updated quicly 
+--- Rather than run the stored proc 
+---- S6.3.3  Notes Generatred in my On the Single Line Enriched Table 
+
+CREATE OR REPLACE TABLE GB_NOTES_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE AS 
+
+SELECT '- This The single Line PO is easy to bring timesheet mappings accross:\n Used to relate the data in the following ways:' AS notes_Single_Line_POS
+UNION ALL
+SELECT '- 1) Recon the timsheets to the order and Price: Are the timesheets related to an order in the order table'
+UNION ALL
+SELECT '- 2) Recon the timesheet hours to this price'
+UNION ALL
+SELECT '- 3) What about the consistency of descriptions .. hand typed ' 
+UNION ALL
+SELECT '- 4) As a basis for further analysis - see below ' ;
+
+
+SELECT * FROM GB_NOTES_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+
+
+========================================================================================
+3.0 Enriched_TS_w_Order_Details_Single_LIne
+
+-- S6.3.1 Execute the stored procedure --- these two lines must go into the dashboard order investigation 
+CALL Create_GB_Enriched_Timesheets_With_Order_Details_Single_Line();
+
+--- S6.3.2 Select the table from the stored Procedure 
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE
+order by PO,ID;
+
+
+===========================================================================================
+4.0 Repairs to Single Line Table (Before Mappings)
+
+
+--- S6.4 Repair to My Tables Before Mappings 
+
+CREATE OR REPLACE TABLE GB_REPAIR_BEFORE_MAPPINGS_2 AS 
+
+SELECT '- You will notice two descriptions were "not provided" used deduction to replace with a name :' AS notes_Single_Line_POS
+UNION ALL
+SELECT '- THE code to do this was '
+UNION ALL
+SELECT '- case when (MACHINE = "Not provided" and CONTAINS("MStockCode","water") ) then "Water Tanker" '
+UNION ALL
+SELECT '-when (MACHINE = "Not provided" and  CONTAINS("MStockCode", "Excavator")) then "Excavator" ' ;
+
+
+
+SELECT * FROM GB_REPAIR_BEFORE_MAPPINGS_2
+
+
+===============================================================
+5.0 Stock_Code_Machine_Mapping_Cnts_Single_Line
+
+-- Execute the stored procedure
+--- S6.5.7 Call the Stored Procedure For The Summary Counts 
+CALL Create_MstockCode_Machine_Mapping_Counts();
+
+select * FROM MstockCode_Machine_Mapping_Counts
+
+========================================================================================
+6.0 Distinct_Machines_Single_Line_Orders
+
+--- ==============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 6.0 Distinct_Machines_Single_Line_Orders
+--- ==========================================================================================
+
+--- S6.6.1 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_machine_from_single_line
+--- The table is queried after generation
+
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+select * from gb_dstnct_machine_from_single_line
+order by MACHINE
+
+
+===============================================================================================
+
+7.0 Distinct_SMStockCodes_Single_Line
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 7.0 Distinct_MStockCodes_Single_Line_Orders
+--- ========================================================================================
+
+--- S6.6.2 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_stockcode_from_single_line
+--- The table is queried after generation
+
+--CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+/*select * from gb_dstnct_machine_from_single_line */
+
+
+select * from gb_dstnct_stockcode_from_single_line 
+order by "MStockCode"
+
+
+======================================================================================================================
+8.0 Distinct_Machine_MStockCodes_Single_Line_Orders
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 8.0 Distinct_Machine_MStockCodes_Single_Line_Orders
+--- ========================================================================================
+
+--- S6.6.3 The Chart SQL in DB calls the procedure which generates the Table: , gb_dstnct_stockcode_from_single_line
+--- The table is queried after generation
+
+
+
+
+CALL Create_Tables_GB_Distinct_Values_Machine_StockCodes_Single_Line_Items();
+
+-- select * from gb_dstnct_machine_from_single_line
+
+
+-- select * from gb_dstnct_stockcode_from_single_line 
+
+
+select * from gb_dstnct_machine_stockcode_from_single_line
+order by MACHINE,"MStockCode"
+
+
+================================================================================================================
+9.0 Count_Stock_Codes_Per_Machine_SL_Orders
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 9.0 Count_Stock_Codes_Per_Machine_SL_Orders
+--- ========================================================================================
+
+--- S 7.1.5.1 Generate the Counts of Stockcodes Per Machine FRom Table GB_SumCounts_Table_MStockCodes_Per_Machine
+
+
+CALL Create_SumCounts_Tables();
+
+select * from GB_SumCounts_Table_MStockCodes_Per_Machine
+Order by Cnt_Stock_Codes DESC
+
+-- select * from GB_SumCounts_Table_Machines_Per_StockCode
+-- order by Cnt_Machines DESC
+
+
+======================================================================================
+10.0 Count_Machines_Per_MStockCode_SL_Orders
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 10.0 Count_Machines_Per_MStockCode_SL_Orders
+--- ========================================================================================
+
+--- S 7.1.5.2 Generate the Counts of Machines Per StockCode from Table GB_SumCounts_Table_MStockCodes_Per_Machine
+
+
+
+CALL Create_SumCounts_Tables();
+
+--select * from GB_SumCounts_Table_MStockCodes_Per_Machine
+
+select * from GB_SumCounts_Table_Machines_Per_StockCode
+order by Cnt_Machines DESC
+
+==================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

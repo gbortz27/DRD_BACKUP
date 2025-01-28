@@ -1,0 +1,161 @@
+DEPRECATION OF DASHBOARD 4
+
+
+
+4.0 NonOverlapVehicles
+
+4.0 NonOverlapVehicles_Ts_Supplier(From 2.0 Timesheet_Vehicles_Match_Vs_NonMatch)
+
+1.0 Vehicle_Counts_IN_Supplier_Not_TS
+
+--=====================================================================================================
+--  S1.7 DB: 3.0 NonOverlapVehicles_Ts_SupplierChart: 1.0 Counts_Non_Matching_Vehicles
+--==================--================================================================================= 
+CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM GB_VEHICLE_NON_MATCHES_SUMMARY
+ORDER BY COUNTS DESC
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED DUE TO NEW TABLES BEING SUPPLIED - HAS TO BE REVALIDATED'
+
+2.0 Vehicle_Counts_In_TS_Not_Supplier
+
+--==================--================================================================================= 
+-- S1.8 3.0 NonOverlapVehicles_Ts_Supplier    Chart: 2.0 Vehicle_Counts_In_TS_Not_Supplier
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+CREATE OR REPLACE TABLE GB_VEHICLE_IN_TIMESHEET_NOT_SUPPLIER AS 
+select SUPPLIER,COUNT(*) as Counts
+FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+GROUP BY  SUPPLIER
+ORDER BY Counts DESC;
+
+SELECT * FROM GB_VEHICLE_IN_TIMESHEET_NOT_SUPPLIER
+ORDER BY Counts DESC;
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED DUE TO NEW TABLES BEING SUPPLIED - HAS TO BE REVALIDATED'
+
+--==================--================================================================================= 
+
+4a_In_Redtop_Not_TS
+
+--==================--================================================================================= 
+-- S2.1    DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 4a_In_Redtop_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY REGISTRATION_NUMBER
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' 
+
+===================================================================================================
+
+4b_In_TS_Not_Redtop
+
+--==================--================================================================================= 
+-- S2.2    DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 4b_In_TS_Not_Redtop
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'REDTOP'
+ORDER BY VEHICLE_CODE
+
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' 
+
+===================================================================================================
+
+5a_In_Quartz_Not_TS
+
+--==================--================================================================================= 
+-- S2.3   DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 5a_In_Quartz_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY REGISTRATION_NUMBER
+--==================================================================================
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' As NOTE
+
+
+============================================================
+
+5b_In_TS_Not_Quartz
+
+--==================--================================================================================= 
+-- S2.4   DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart: 5b_In_TS_Not_Quartz
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'QUARTZ'
+ORDER BY VEHICLE_CODE
+--==================================================================================
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' As NOTE
+
+--==================================================================================
+
+6a_In_KLT_Not_TS
+
+
+--==================--================================================================================= 
+-- S2.5  DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart:6a_In_KLT_Not_TS
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+SELECT * FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+WHERE SUPPLIER = 'KLT'
+ORDER BY REGISTRATION_NUMBER
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' As NOTE
+
+
+
+--==================================================================================
+
+--==================--================================================================================= 
+-- S2.5  DB:3.0 NonOverlapVehicles_Ts_Supplier    Chart:6b_In_TS_Not_KLT
+--==================--================================================================================= 
+--- ALL SUPPLIERS
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * FROM GB_IN_TIMESHEET_NOT_SUPPLIER
+WHERE SUPPLIER = 'KLT'
+ORDER BY VEHICLE_CODE
+--==================================================================================
+
+-- Deprecate due to new info
+SELECT 'TABLE DEPRECATED' As NOTE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
