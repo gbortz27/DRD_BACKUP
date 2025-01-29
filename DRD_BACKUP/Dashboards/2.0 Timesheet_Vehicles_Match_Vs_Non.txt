@@ -1,0 +1,71 @@
+2.0 Timesheet_Vehicles_Match_Vs_NonMatch
+
+
+/* ============================================================================================================*/
+/*===             DASHBOARDS  2.0 Timesheet_Vehicles_Match_Vs_NonMatch */
+
+1.0 Matches and Non Matches:Timesheet Vs SUPPLIER
+
+-- --=========================================================
+-- --  S1.3 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart: 1.0 Matches and Non Matches:Timesheet Vs SUPPLIER
+-- --===============================================
+
+-- -- S1.2 Calling the function to generate the tables 
+-- -- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_VEHICLE_MATCH_SUMMARY
+ORDER BY MATCHES ;
+
+-- --===================================================
+
+-- SELECT 'DEPRECATED TABLE NEEDS RERUN DUE TO SUPPLY OF NEW VEHICLE TABLES' As " " 
+-- FROM DUAL;
+
+-- SELECT 'DEPRECATED TABLE NEEDS RERUN DUE TO SUPPLY OF NEW VEHICLE TABLES' AS abc
+-- --FROM DUAL;
+
+===========================================================================================================
+
+2.0 TableOfGraph(on left): MATCHES_Count_TS_Vs_Supplier
+--==================================================================================================
+--=====================================================================================================
+--  S1.4 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:2.0 Table: MATCHES_Count_TS_Vs_Supplier
+--=================================================================================================== 
+-- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_VEHICLE_MATCH_SUMMARY
+ORDER BY MATCHES
+
+
+============================================================================================================
+
+3.0 Vehicles in Both TS ansd Telematics
+
+--=====================================================================================================
+--  S1.5 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:3.0 Vehicles in Both TS ansd Telematics
+--=================================================================================================== 
+
+-- Example of how to execute the procedure
+CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_TIMESHEET_IN_SUPPLIER
+order by supplier
+
+=================================================================================================================
+
+4.0 In Ts Not Supplier
+
+--=====================================================================================================
+--  S1.6 DB: Timesheet_Vehicles_Match_Vs_NonMatch Chart:4.0 In Ts Not Supplier
+--==================--================================================================================= 
+
+-- Example of how to execute the procedure
+--CALL EXECUTE_VEHICLE_MATCHING();
+
+select * from GB_IN_TIMESHEET_NOT_SUPPLIER
+order by supplier
+
+
+===========================================================================================================

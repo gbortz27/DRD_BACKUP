@@ -187,6 +187,238 @@ order by Cnt_Machines DESC
 
 ==================================================================================================
 
+11.0 Distinct Machines Per StockCode
+
+----------------------------------------------------------------------------
+---============================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 11.0 Distinct Machines Per StockCode
+--- ========================================================================================
+
+-- S7.1.2 -- Ambigiuites in the Class Attrribution Per MstockCode 
+
+---THERE ARE SIGNIFICANT AMBIGUITIUES IN THE DEFINITIONS OF THE VEHICLE TYPE 
+
+
+CREATE OR REPLACE TABLE GB_Multiple_Machines_Per_StockCode AS 
+select * from GB_Mstock_Code_Machine_Mapping
+where "MStockCode" in
+(select "MStockCode" from
+(select "MStockCode", count(*) as counts  FROM GB_Mstock_Code_Machine_Mapping
+group by "MStockCode"
+having counts >1
+order by counts desc )
+)
+order by "MStockCode";
+
+select * from GB_Multiple_Machines_Per_StockCode
+order by "MStockCode",MACHINE_FIXED
+
+=============================================================================================
+12.0 Notes on Discrepancies Between Descriptions and Machines
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 12.0 Notes on Discrepancies Between Descriptions and Machines 
+--- =========================================================================================================
+
+--- S7.1.8 Notes For the Above Tables 
+-- Execute the stored procedure
+
+-- Execute the stored procedure
+CALL Create_GB_Notes_For_Machine_MStockCode_Mappings();
+
+select * from GB_Notes_For_Machine_MStockCode_Mappings
+
+=============================================================================================================
+13.0 Creation and Selection of Multiple Line Order Table
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 13.0 Creation and Selection of Multiple Line Order Table 
+--- =========================================================================================================
+
+-- 7.2.3 Select Multiple Line Orders 
+
+Call Create_GB_PorMasterDetail_NB_Fields_Multiple_Line();
+
+select * FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+order by "PurchaseOrder","Line"
+
+============================================================================================================
+
+14.0 Counting Lines Per Order - Multiple Line Orders
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons Chart: 14.0 Counting Lines Per Order - Multiple Line Orders 
+--- =========================================================================================================
+
+-- S7.2.4 Count Number of Lines Per Order- Multiple Lines Orders 
+CREATE OR REPLACE TABLE GB_LINES_PER_PO_MultilinePOTable AS 
+select "PurchaseOrder" , count(*) as Counts 
+from GB_PorMasterDetail_NB_Fields_Multiple_Line
+group by "PurchaseOrder"
+order by counts DESC;
+
+select * from GB_LINES_PER_PO_MultilinePOTable
+order by counts DESC
+
+=====================================================================================================================
+15.0 Counts of Stock Codes - Multiple Line Orders
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 15.0 Counts of Stock Codes - Multiple Line Orders 
+--- =========================================================================================================
+
+/* THE NEXT TABLE CAN BE THE DISTINCT STOCK CODES and COUNTS */
+
+-- S7.2.5 Counts of Stock Codes - Multiple Line Orders 
+--- and count them -- PUT THIS IN THE DASHBOASRD
+--- Could Replace by Stored Procedure 
+CREATE OR REPLACE TABLE GB_COUNTS_PER_MStockCode AS 
+select "MStockCode" , count(*) as Counts 
+from GB_PorMasterDetail_NB_Fields_Multiple_Line
+group by "MStockCode"
+order by "MStockCode";
+
+select * from GB_COUNTS_PER_MStockCode
+order by "MStockCode"
+
+============================================================================================
+16.0 Counts of Stock Codes In Multiple Line Orders Not In Single Line
+
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 16.0 Counts of Stock Codes In Multiple Line Orders Not In Single Line 
+--- =========================================================================================================
+
+-- S7.2.6 Counts of Stock Codes In Multiple Line Orders Not In Single Line
+--- Lets now get a list of these multiline codes that are not in ther single line codes --
+--- Table Name: GB_MLineStockCodes_NotIn_SLineStockCodes
+
+
+CREATE OR REPLACE TABLE GB_MLineStockCodes_NotIn_SLineStockCodes AS 
+SELECT * FROM GB_COUNTS_PER_MStockCode
+WHERE "MStockCode" NOT IN 
+(SELECT "MStockCode" 
+FROM TEST_YMH.CYBER_SEC_TESTING.GB_PORMASTERDETAIL_NB_FIELDS_SINGLE_LINE)
+order by "MStockCode";
+
+select * from GB_MLineStockCodes_NotIn_SLineStockCodes
+order by "MStockCode";
+
+========================================================================================
+
+17.0 Counts of Stock Codes In Both Multi and Single Line Orders
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 17.0 Counts of Stock Codes In Both Multi and Single Line Orders
+--- =========================================================================================================
+-- S7.2.7 Counts of Stock Codes In Multiple Line Orders Not In Single Line
+
+CREATE OR REPLACE TABLE GB_MLineStockCodes_In_SLineStockCodes AS 
+
+SELECT * FROM GB_COUNTS_PER_MStockCode
+WHERE "MStockCode"  IN 
+(SELECT "MStockCode" 
+FROM TEST_YMH.CYBER_SEC_TESTING.GB_PORMASTERDETAIL_NB_FIELDS_SINGLE_LINE)
+order by "MStockCode";
+
+select * from GB_MLineStockCodes_In_SLineStockCodes
+order by "MStockCode";
+
+==========================================================================================
+
+
+18.0 Notes For Multiple Line Orders
+---=========================================================================================================
+--------- Dashboard: PurchaseOrder_Recons; Chart: 18.0 Notes For Multiple Line Orders 
+--- =========================================================================================================
+-- S7.2.8 Notes For Multiple Line Orders 
+
+CREATE OR REPLACE TABLE  GB_NOTES_ON_MULTILINE_ORDERS AS
+
+(SELECT 1 as ID,'Codes in multiple lines same but differ by REG NUMBER' as description , 'DW0690,DW06892,DW06893,DW06958' as Codes, 'Inconsistent StockCoding' as comments ,'GB_PorMasterDetail_NB_Fields_Multiple_Line' As Tablename from DUAL
+UNION 
+select 2,'Codes in multiple lines same but differ by Month', 'DW06889,DW06897,EW06507,KW06612','Causes Inconsistencies','GB_PorMasterDetail_NB_Fields_Multiple_Line' 
+UNION
+select 3, 'Most Lines differ by vehicle description (many versions of truth)','Balance of Code', 'Inconsistencies', 'GB_PorMasterDetail_NB_Fields_Multiple_Line'
+UNION
+select 4 , 'Up To 6 Lines Per Order','See Table ', 'The number of multiline orders is material','GB_LINES_PER_PO_MultilinePOTable'
+UNION
+select 5, 'Number of Unique Descriptions is Significant ','44', 'May Cause Significant ambiguities', 'GB_COUNTS_PER_MStockCode0'
+UNION
+select 6, 'Significant  descrepancies between Single and Multiline Description','41 out of 44', 'Seems different rules for Single/Multiple Lines','GB_MLineStockCodes_NotIn_SLineStockCodes'
+UNION
+select 7,'Only 3 codes are consistent between single and Multilines', '3 out of 44', 'Should not be the case','GB_MLineStockCodes_In_SLineStockCodes'
+order by ID);
+
+select * from GB_NOTES_ON_MULTILINE_ORDERS
+
+================================================================================================
+19.0 Enriching Timesheets with Multiple Line Orders
+
+-- This query is sent to Dashboard 
+-- THIS QUERY JOINS THE TIMESHEETS WITH THE MULTIPLE LINE ORDERS 
+-- Note: This gives the extent of ambiguities due to the lack of adequate indexes 
+--
+CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE AS 
+
+(SELECT A.ID, 
+        A.MODIFIED_AT, 
+        A.CREATED_AT, 
+        A.MACHINE, 
+        A.COMPANY, 
+        A.PO, 
+        A.INVOICE,
+        A.ORDER_NUMBER, 
+        A.TOTAL_HOURS, 
+        A.DAYS_PER_MONTH, 
+        A.PER_DAY, 
+        A.TOTAL, 
+        A.MONTH_YEAR, 
+        A.MONTH, 
+        A.YEAR,
+        A.VEHICLE_CODE, 
+        A.MACHINE_SUB_TYPE ,
+        B.*
+        FROM timesheet_timesheet As A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Multiple_Line as B
+        ON A.PO = B."PurchaseOrder");
+
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE
+order by PO, "Line", ID
+
+========================================================================================================
+A1.1 Special Multiple Line Order Investigation
+
+--=====SA.1 ======= INVESTITIGATE PARTICULAR ORDERS 
+-- SA.1.1 -- ORDER DW06958 Bring OUT ALL THE POSSIBLE MATCHES 
+
+select * from GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_MULTIPLE_LINE
+WHERE PO = 'DW06958'
+order by PO, "Line", ID
+
+-- RESULT IS 24 LINES 
+-- THe order has 6 lines 
+
+===================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

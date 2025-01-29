@@ -1,0 +1,52 @@
+ 6b. Quartz_Hours_Vs_Days_Recon
+
+6b.1 Vehicles_w_Hours_Differences
+
+SELECT * FROM QUARTZ_VEHICLES_WITH_HOUR_DIFFS
+
+
+
+6b.2 Details_of_TS_TSDAYS_No_Diff
+           
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.3 Details_of_TS_TSDAYS_Diff
+
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+  
+
+6b.4 Quartz_Vehicles_TS_Hours_Reconciled_By_Month
+
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.5 Quartz_Vehicle_Hour_Differences_Per_Month
+
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.6 Quartz_Vehicles_TS_Counts_Reconciled_By_Month
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.7 Timesheet_Counts_ Quartz_Vehicle_Hour_Differences_Per_Month
+
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.8 Quartz_Vehicles_TS_Hours_Reconciled_By_Month
+
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;
+
+
+6b.9 CopQuartz_Vehicle_Hour_Differences_Per_Month_Per_TS
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_Quartz_id_vehicles;

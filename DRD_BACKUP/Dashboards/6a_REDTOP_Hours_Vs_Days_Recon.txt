@@ -1,0 +1,38 @@
+ 6a_REDTOP_Hours_Vs_Days_Recon 
+
+6a.1 Vehicles_w_Hours_Differences
+
+SELECT * FROM REDTOP_VEHICLES_WITH_HOUR_DIFFS
+
+6a.2 Details_of_TS_TSDAYS_No_Diff
+
+           
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.3 Details_of_TS_TSDAYS_Diff
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;   
+
+6a.4 0Redtop_Vehicles_TS_Hours_Reconciled_By_Month
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.5 Redtop_Vehicles_TS_Hours_UnReconciled
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.6 Redtop_Vehicles_TS_Counts_Reconciled_By_Month
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.7 Redtop_Vehicles_TS_Count UnReconciled Per Month
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.8 Redtop_Vehicles_TS_Hours_Reconciled_By_Month
+
+SELECT * FROM GB_Reconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;
+
+6a.9 TS_Hour Differences UnReconciled Per Month
+
+SELECT * FROM GB_Unreconciled_Hours_TS_Vs_Days_RedTop_id_vehicles;

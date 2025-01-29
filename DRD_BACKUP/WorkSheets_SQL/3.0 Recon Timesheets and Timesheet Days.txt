@@ -1,0 +1,163 @@
+/* this is version 2 of the mappings , VERSION 1 NEVER GAVE TYHE ACTUAL MAPPINGS BUT NUMBERS FOR THAT */
+/* Note the errors: QUARTS is Corrected to QUARTZ for the table and TIMESHEETS_TIMESHEETS corrected to TIMESHEET_TIMESHEET*/
+/* PUT GB in FRONT OF ALL OUTPUT TABLES */
+
+--- S1.0 This is A procedure 
+
+CREATE OR REPLACE PROCEDURE MISSING_IDs_BETWEEN_TS_ANS_TS_DAYS()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Table 1: IDS UNMATCHED IN TIMESHEETS and DAYS 
+    CREATE OR REPLACE TABLE GB_Missing_TS_IDS_in_TSheetDAYS as 
+
+    (WITH missing_values AS (
+        SELECT ID as missing_value,
+               'TS_IDs in TIMESHEET not in TS_DAYS' as source
+        FROM TIMESHEET_TIMESHEET
+        WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEETDAYS WHERE TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID = TIMESHEET_TIMESHEET.ID)
+        
+        UNION ALL
+        
+        SELECT TIMESHEET_ID,
+               'TS_IDs in DAYS not in TIMESHEET' as source
+        FROM TIMESHEET_TIMESHEETDAYS
+        WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEET WHERE TIMESHEET_TIMESHEET.ID = TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID)
+    ),
+    Missing_Table AS (
+        SELECT 
+            ROW_NUMBER() OVER (ORDER BY missing_value) as row_num,
+            missing_value, 
+            source 
+        FROM missing_values
+    )
+    -- Part 2: Pivoted view
+    SELECT *
+    FROM Missing_Table
+    PIVOT(
+        MAX(missing_value)
+        FOR source IN ('TS_IDs in TIMESHEET not in TS_DAYS', 'TS_IDs in DAYS not in TIMESHEET')
+    ) AS p
+    ORDER BY row_num);
+
+  
+
+
+        
+    -- Rest of the previous procedure remains the same...
+    -- Table 2: UNmatched Tables above But PIVOTED
+    
+    CREATE OR REPLACE TABLE GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM as 
+
+    WITH missing_values AS (
+        SELECT ID as missing_value,
+               'TS_IDs in TIMESHEET not in TS_DAYS' as source
+        FROM TIMESHEET_TIMESHEET
+        WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEETDAYS WHERE TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID = TIMESHEET_TIMESHEET.ID)
+        
+        UNION ALL
+        
+        SELECT TIMESHEET_ID,
+               'TS_IDs in DAYS not in TIMESHEET' as source
+        FROM TIMESHEET_TIMESHEETDAYS
+        WHERE NOT EXISTS (SELECT 1 FROM TIMESHEET_TIMESHEET WHERE TIMESHEET_TIMESHEET.ID = TIMESHEET_TIMESHEETDAYS.TIMESHEET_ID)
+    ),
+    Missing_Table AS (
+        SELECT 
+            ROW_NUMBER() OVER (ORDER BY missing_value) as row_num,
+            missing_value, 
+            source 
+        FROM missing_values
+    )
+    select * from Missing_Table
+    ;
+
+
+    -- Table 3: Summary of Matching and Non-Matching Vehicles
+    
+   
+
+   -- Part 3: Counts
+    CREATE OR REPLACE TABLE GB_COUNTS_MISSING_TIMESHEETS AS 
+    
+    SELECT source, COUNT(*) as count
+    FROM GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM 
+    GROUP BY source;
+
+  
+    result_msg := 'Successfully created vehicle matching tables';
+    RETURN result_msg;
+END;
+$$;
+
+-- Procedure to execute the table generation
+CREATE OR REPLACE PROCEDURE EXECUTE_TIMESHEET_MATCHING()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    result STRING;
+BEGIN
+    result := (CALL MISSING_IDs_BETWEEN_TS_ANS_TS_DAYS());
+    RETURN result;
+END;
+$$;
+
+
+-- Example of how to execute the procedure
+CALL EXECUTE_TIMESHEET_MATCHING();
+
+--Tests - Send These to Dashboards Missing Sheets 
+
+--=================================================================================================================
+---                  DB: 4.0 Recon Timesheets and Timesheet Days;    Chart:1.0 Missing TS_IDs_In_TSheetDays
+--====================================================================================================
+You can execute this stored procedure using: */
+-- S1.1 Recon of IDS in TS and TS Days
+--
+CALL EXECUTE_TIMESHEET_MATCHING();
+
+select * from GB_Missing_TS_IDS_in_TSheetDAYS
+
+--============================================================================================
+
+
+--=================================================================================================================
+---                  DB: 4.0 Recon Timesheets and Timesheet Days;    Chart:2.0 Missing Timsheets and Source
+--====================================================================================================
+--You can execute this stored procedure using: */
+-- S1.2 Source of Missing Timsheets
+--
+--CALL EXECUTE_TIMESHEET_MATCHING();
+
+ select * from GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM 
+
+--============================================================================================
+
+
+--=================================================================================================================
+---                  DB: 4.0 Recon Timesheets and Timesheet Days;    Chart:3.0 CountsOfMissingTimeSheets
+--====================================================================================================
+--You can execute this stored procedure using: */
+-- S1.3 Source of Missing Timsheets
+--
+--CALL EXECUTE_TIMESHEET_MATCHING();
+
+ SELECT * FROM GB_COUNTS_MISSING_TIMESHEETS
+
+--============================================================================================
+
+
+-- Tests to drop the tables 
+DROP TABLE GB_Missing_TS_IDS_in_TSheetDAYS
+
+DROP TABLE GB_Missing_TS_IDS_BETWEEN_SHEETSandDAYS_ROWFORM 
+
+DROP TABLE GB_COUNTS_MISSING_TIMESHEETS
+
+--==================== END OF ANALYSIS =======================
