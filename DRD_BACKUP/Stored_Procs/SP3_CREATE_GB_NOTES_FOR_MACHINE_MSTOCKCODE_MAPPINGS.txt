@@ -1,0 +1,25 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_GB_NOTES_FOR_MACHINE_MSTOCKCODE_MAPPINGS()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+BEGIN
+    -- Create the GB_Notes_For_Machine_MStockCode_Mappings table
+    CREATE OR REPLACE TABLE gb_notes_for_machine_mstockcode_mappings AS 
+    SELECT ''These notes are for the Above 5 Tables based on single Line Orders. Multiple line orders - complexity - need these mappings to solve  :'' AS Notes_for_Distinct_Machines_MStockCodes_Combos_Above
+    UNION ALL
+    SELECT ''- Distinct Machines Table - "Not Provided" should not exist - this was repaired by Deduction''
+    UNION ALL
+    SELECT ''- Distinct Machines Table:  inconsistency as same vehicle is described in 2 ways --  Tractor Backhoe Loader ; Tractor Loader Backhoe ''
+    UNION ALL
+    SELECT ''- Distinct Stock Codes Tabled shows the many different ways a vehicle is described , different spacing , capitalization etc ''
+    UNION ALL
+    SELECT ''- Combinations Table Distinct Machine StockCodes:  shows the Combination Mapping  in How the Machines are described  ''
+    UNION ALL
+    SELECT ''- Count_Stock_Codes_Per_Machine  shows  different descriptions for the same vehicle Class - implying that many subcategories of types??''
+    UNION ALL
+    SELECT ''- Count_Machines_Per_StockCode shows  different Classes for the same description  - can 1 description fall into 2 classes - unlikely'';
+
+    RETURN ''Table gb_notes_for_machine_mstockcode_mappings created successfully'';
+END;
+';

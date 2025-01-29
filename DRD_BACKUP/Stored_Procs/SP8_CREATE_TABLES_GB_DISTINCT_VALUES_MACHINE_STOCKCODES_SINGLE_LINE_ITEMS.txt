@@ -1,0 +1,27 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_TABLES_GB_DISTINCT_VALUES_MACHINE_STOCKCODES_SINGLE_LINE_ITEMS()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Create the GB_Dstnct_Machine_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_machine_from_single_line AS
+    SELECT DISTINCT machine 
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    -- Create the GB_Dstnct_StockCode_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_stockcode_from_single_line AS
+    SELECT DISTINCT "MStockCode" 
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    -- Create the GB_Dstnct_Machine_StockCode_From_Single_Line table
+    CREATE OR REPLACE TABLE gb_dstnct_machine_stockcode_from_single_line AS
+    SELECT DISTINCT machine, "MStockCode"
+    FROM gb_enriched_timesheets_w_order_details_single_line;
+
+    result_msg := ''Tables created successfully'';
+    RETURN result_msg;
+END;
+';

@@ -1,0 +1,23 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_SUMCOUNTS_TABLES()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+BEGIN
+    -- Create the GB_SumCounts_Table_MStockCodes_Per_Machine table
+    CREATE OR REPLACE TABLE gb_sumcounts_table_mstockcodes_per_machine AS
+    SELECT MACHINE_FIXED, COUNT(*) AS cnt_stock_codes
+    FROM gb_mstock_code_machine_mapping_fixed
+    GROUP BY MACHINE_FIXED
+    ORDER BY cnt_stock_codes DESC;
+
+    -- Create the GB_SumCounts_Table_Machines_Per_StockCode table
+    CREATE OR REPLACE TABLE gb_sumcounts_table_machines_per_stockcode AS
+    SELECT "MStockCode", COUNT(*) AS cnt_machines
+    FROM gb_mstock_code_machine_mapping_fixed
+    GROUP BY "MStockCode"
+    ORDER BY cnt_machines DESC;
+
+    RETURN ''Tables created successfully'';
+END;
+';

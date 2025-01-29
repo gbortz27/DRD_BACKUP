@@ -1,0 +1,20 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CALCULATE_MONTHLY_SALES("MONTH" NUMBER(38,0), "YEAR" NUMBER(38,0))
+RETURNS NUMBER(38,0)
+LANGUAGE SQL
+COMMENT='user-defined procedure'
+EXECUTE AS OWNER
+AS '
+DECLARE
+    total_sales NUMBER;
+BEGIN
+    -- Calculate total sales for the specified month and year
+    SELECT SUM(sale_amount) 
+    INTO :total_sales
+    FROM sales_table
+    WHERE MONTH(sale_date) = :month 
+    AND YEAR(sale_date) = :year;
+    
+    -- Return the total sales
+    RETURN :total_sales;
+END;
+';

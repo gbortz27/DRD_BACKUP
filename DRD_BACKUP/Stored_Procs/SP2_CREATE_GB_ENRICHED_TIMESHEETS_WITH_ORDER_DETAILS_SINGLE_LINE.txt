@@ -1,0 +1,31 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_GB_ENRICHED_TIMESHEETS_WITH_ORDER_DETAILS_SINGLE_LINE()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+COMMENT='user-defined procedure'
+EXECUTE AS OWNER
+AS '
+    CREATE OR REPLACE TABLE GB_ENRICHED_TIMESHEETS_W_ORDER_DETAILS_SINGLE_LINE AS 
+    (
+        SELECT A.ID, 
+            A.MODIFIED_AT, 
+            A.CREATED_AT, 
+            A.MACHINE, 
+            A.COMPANY, 
+            A.PO, 
+            A.INVOICE,
+            A.ORDER_NUMBER, 
+            A.TOTAL_HOURS, 
+            A.DAYS_PER_MONTH, 
+            A.PER_DAY, 
+            A.TOTAL, 
+            A.MONTH_YEAR, 
+            A.MONTH, 
+            A.YEAR,
+            A.VEHICLE_CODE, 
+            A.MACHINE_SUB_TYPE,
+            B.*
+        FROM timesheet_timesheet AS A
+        INNER JOIN GB_PorMasterDetail_NB_Fields_Single_Line AS B
+        ON A.PO = B."PurchaseOrder"
+    );
+';

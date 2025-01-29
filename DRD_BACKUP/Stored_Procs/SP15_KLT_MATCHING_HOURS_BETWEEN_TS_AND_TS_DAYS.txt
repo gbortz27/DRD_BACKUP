@@ -1,0 +1,169 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.KLT_MATCHING_HOURS_BETWEEN_TS_AND_TS_DAYS()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Table 1: Vehicles Ovelapping between Timesheets and KLT Telematics
+    
+    CREATE OR REPLACE TABLE GB_Vehicle_Overlaps_KLT AS 
+    (SELECT DISTINCT A.REGISTRATION_NUMBER , B.VEHICLE_CODE
+    FROM TEST_YMH.CYBER_SEC_TESTING.REDTOP_TELEMATICS AS A
+    INNER JOIN TEST_YMH.CYBER_SEC_TESTING.TIMESHEET_TIMESHEET AS B
+    ON A.REGISTRATION_NUMBER = B.VEHICLE_CODE
+    AND COMPANY LIKE ''%KLT%''
+    ORDER BY REGISTRATION_NUMBER)
+    ;
+
+        
+    -- Table 2: These are the Vehicle list not in the KLT Ovelpas 
+    
+    --- SAVE THESE 2 NOT IN KLT VEHICLES IN A TABLE 
+    CREATE OR REPLACE TABLE GB_KLTVehicles_in_TS_NotInKLT AS 
+    (SELECT DISTINCT VEHICLE_CODE from TIMESHEET_TIMESHEET
+    WHERE COMPANY LIKE ''%KLT'' 
+    and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_KLT))
+    ;
+
+
+    -- Table 3: Table of Timesheets of Vehicles in KLT
+    
+    CREATE OR REPLACE TABLE GB_Timsheets_Identified_KLT_Vehicles AS 
+    (SELECT * from TIMESHEET_TIMESHEET
+    WHERE COMPANY LIKE ''%KLT%'' 
+    and VEHICLE_CODE IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_KLT))
+    ;
+
+     -- Table 4: Table of Timesheets of Vehicles not in KLT
+    
+    CREATE OR REPLACE TABLE GB_Timsheets_UnIdentified_KLT_Vehicles AS 
+    (SELECT * from TIMESHEET_TIMESHEET
+    WHERE COMPANY LIKE ''%KLT%'' 
+    and VEHICLE_CODE NOT IN (SELECT VEHICLE_CODE FROM GB_Vehicle_Overlaps_KLT))
+    ;
+
+     -- Table 5: Table of Timesheet Days Matched to table of Timesheets In KLT Telematics
+    
+    CREATE OR REPLACE TABLE GB_Timsheet_Days_For_Identified_KLT_Vehicles AS 
+    (SELECT * from TIMESHEET_TIMESHEETDAYS
+    WHERE TIMESHEET_ID IN (SELECT ID FROM GB_Timsheets_Identified_KLT_Vehicles))
+    ;
+
+     -- Table 6: Matching Time_sheet and T|imesheet Daya 
+    
+    CREATE OR REPLACE TABLE GB_Timesheet_TimesheetDays_For_KLT_ID_Vehicles_Only AS 
+    (SElECT  A.ID as Days_ID ,
+                    A.MODIFIED_AT as Days_MODIFIED_AT,
+                    A.CREATED_AT as Days_CREATED_AT, 
+                    A.DAY as Days_DAY, 
+                    A.DATE as Days_DATE, 
+                    A.HOURS as Days_HOURS, 
+                    A.RATE as Days_RATE,
+                    A.PERIOD as Days_PERIOD,
+                    A.TIMESHEET_ID ,
+                    B.*
+    FROM  GB_Timsheet_Days_For_Identified_KLT_Vehicles as A
+    LEFT JOIN GB_Timsheets_Identified_KLT_Vehicles as B
+    ON A.TIMESHEET_ID = B.ID
+    ORDER BY DATE DESC) 
+    ;
+
+    -- Table 7: Summary of Matching and Non-Matching Vehicles
+    
+   -- Basically 31-08-2024.. Based on the vehicles ..therefore we have 2 months SAMPLE 
+
+    -- Lets make sense of this 
+    -- we have 15 vehicles at 62 days per vehicle 
+    -- Total that could be 930 days total and we have 682 days
+    
+    --- The following Query Now compares the hours in the Timesheet with an addition of the hours per day 
+    --- We use a cte to take a differencve in the Hours added up and those in the ts 
+    -- Lets add in the Vehicle and the month here as well as the minimum and max dates 
+    -- STORE THE ABOVE IN A TABLE : GB_Reconciling_Hours_from_Days_to_Timesheets
+
+
+
+    CREATE OR REPLACE TABLE GB_Reconciling_Hours_from_Days_to_Timesheets_KLT AS 
+    
+        (WITH cte_Hours_Compare AS 
+        
+        (SELECT TIMESHEET_ID,Month,VEHICLE_CODE , DAYS_PER_MONTH, MIN(Days_DATE) as Min_DATE, MAX(Days_Date) as Max_Date, TOTAL_HOURS , SUM(Days_HOURS) as  
+        Tot_Hrs_From_Days, 
+        FROM GB_Timesheet_TimesheetDays_For_KLT_ID_Vehicles_Only
+        GROUP BY TIMESHEET_ID ,Month,VEHICLE_CODE , DAYS_PER_MONTH, TOTAL_HOURS
+        ORDER BY VEHICLE_CODE) 
+        
+        SELECT *, Tot_Hrs_From_Days - TOTAL_HOURS as Diff_Hrs_Days_minus_Hours, datediff(''day'', Min_Date, Max_Date) +1 AS  days_min_max
+        from cte_Hours_Compare)
+        ;
+
+    -- Table 8: Call the Table: GB_Unreconciled_Hours_TS_Vs_Days_KLT_id_vehicles
+    
+   -- 
+
+    CREATE OR REPLACE TABLE GB_Unreconciled_Hours_TS_Vs_Days_KLT_id_vehicles AS 
+
+           ( select * from GB_Reconciling_Hours_from_Days_to_Timesheets_KLT
+            where DIFF_HRS_DAYS_MINUS_HOURS >0
+            )
+            ;
+
+    -- 
+
+    -- Table 9 : THe true matching of Hours where the sums add up 
+    
+   CREATE OR REPLACE TABLE GB_Reconciled_Hours_TS_Vs_Days_KLT_id_vehicles AS 
+
+           ( select * from GB_Reconciling_Hours_from_Days_to_Timesheets_KLT
+            where DIFF_HRS_DAYS_MINUS_HOURS = 0
+            ORDER BY TIMESHEET_ID
+            )
+            ;
+
+    -- Table 10 : Timeshet Matching Where Dfiff <0
+    
+   CREATE OR REPLACE TABLE GB_UnReconciled_Hours_TS_Vs_Days_KLT_id_vehicles_LT_0 AS 
+
+           ( select * from GB_Reconciling_Hours_from_Days_to_Timesheets_KLT
+            where DIFF_HRS_DAYS_MINUS_HOURS < 0
+            ORDER BY TIMESHEET_ID
+            )
+            ;
+
+    -- Table 11 -- Counts of Hour Differences Per Vehicle
+
+   CREATE OR REPLACE TABLE KLT_VEHICLES_WITH_HOUR_DIFFS AS 
+
+    With Classify_Hours_Diff AS 
+    
+       (SELECT *, case when DIFF_HRS_DAYS_MINUS_HOURS != 0 THEN 1
+                   ELSE 0
+                   END  as DIFF
+                   FROM GB_Reconciling_Hours_from_Days_to_Timesheets_KLT),
+    
+                  All_Counts As 
+                   
+                    (SELECT DIFF, COUNT(DIFF) as No_Of_Times 
+                    FROM Classify_Hours_Diff
+                    GROUP BY  DIFF
+                    ORDER BY No_Of_Times DESC),
+    
+            
+    
+                  Count_Dist_Per_Vehicle As 
+                     (SELECT VEHICLE_CODE, DIFF , COUNT(DIFF) as NO_OF_TIMES 
+                     FROM Classify_Hours_Diff
+                     WHERE  DIFF != 0
+                     GROUP BY VEHICLE_CODE , DIFF 
+                     
+                     ORDER BY DIFF DESC
+                   )
+    
+        select * from Count_Dist_Per_Vehicle;
+
+    result_msg := ''Successfully created vehicle matching tables'';
+    RETURN result_msg;
+END;
+';

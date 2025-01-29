@@ -1,0 +1,22 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_GB_PORMASTERDETAIL_NB_FIELDS_MULTIPLE_LINE()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+COMMENT='user-defined procedure'
+EXECUTE AS OWNER
+AS '
+BEGIN
+        CREATE OR REPLACE TABLE GB_PorMasterDetail_NB_Fields_Multiple_Line AS 
+        (
+        
+        with cte_order_cnts_GT_1 AS
+        (select "PurchaseOrder", Count(*)  as Counts  FROM GB_PorMasterDetail_NB_Fields_Distinct
+        Group By "PurchaseOrder"
+        Having Counts > 1)
+        
+        
+        SELECT * from GB_PorMasterDetail_NB_Fields_Distinct
+        WHERE "PurchaseOrder" in (select "PurchaseOrder" from cte_order_cnts_GT_1)
+        );
+        RETURN ''GB_PorMasterDetail_NB_Fields_Distinct'';
+END;
+';

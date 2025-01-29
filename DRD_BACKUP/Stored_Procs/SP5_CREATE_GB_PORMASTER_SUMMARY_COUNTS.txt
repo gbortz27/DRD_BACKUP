@@ -1,0 +1,52 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_GB_PORMASTER_SUMMARY_COUNTS()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+    CREATE OR REPLACE TABLE GB_PorMaster_Summary_Counts AS
+    WITH Counts AS (
+        -- First Table Counts
+        SELECT ''Row_Count'' AS Description, COUNT(*) AS Count, ''GB_PorMasterDetail_NB_Fields_Distinct'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Distinct
+        UNION ALL
+        SELECT ''Distinct_POs'' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, ''GB_PorMasterDetail_NB_Fields_Distinct'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Distinct
+        
+        UNION ALL
+        
+        -- Second Table Counts
+        SELECT ''Row_Count'' AS Description, COUNT(*) AS Count, ''GB_PorMasterDetail_NB_Fields_Single_Line'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Single_Line
+        UNION ALL
+        SELECT ''Distinct_POs'' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, ''GB_PorMasterDetail_NB_Fields_Single_Line'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Single_Line
+        
+        UNION ALL
+        
+        -- Third Table Counts
+        SELECT ''Row_Count'' AS Description, COUNT(*) AS Count, ''GB_PorMasterDetail_NB_Fields_Multiple_Line'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+        UNION ALL
+        SELECT ''Distinct_POs'' AS Description, COUNT(DISTINCT "PurchaseOrder") AS Count, ''GB_PorMasterDetail_NB_Fields_Multiple_Line'' AS Table_Name
+        FROM GB_PorMasterDetail_NB_Fields_Multiple_Line
+        
+        UNION ALL
+        
+        -- Fourth Table Counts
+        SELECT ''Row_Count'' AS Description, COUNT(*) AS Count, ''TIMESHEET_TIMESHEET'' AS Table_Name
+        FROM TIMESHEET_TIMESHEET
+        UNION ALL
+        SELECT ''Distinct_POs'' AS Description, COUNT(DISTINCT PO) AS Count, ''TIMESHEET_TIMESHEET'' AS Table_Name
+        FROM TIMESHEET_TIMESHEET
+    )
+    SELECT Description, Count, Table_Name FROM Counts
+    
+    UNION ALL
+    
+    -- Calculate the difference between Distinct_POs in TIMESHEET_TIMESHEET and GB_PorMasterDetail_NB_Fields_Distinct
+    SELECT ''Diff(POs TS - POs OrderDetail)'' AS Description, 
+    (SELECT Count FROM Counts WHERE Description = ''Distinct_POs'' AND Table_Name = ''TIMESHEET_TIMESHEET'') - 
+    (SELECT Count FROM Counts WHERE Description = ''Distinct_POs'' AND Table_Name = ''GB_PorMasterDetail_NB_Fields_Distinct'') AS Count, 
+    ''GB_PorMasterDetail_Timesheet'' AS Table_Name;
+
+';

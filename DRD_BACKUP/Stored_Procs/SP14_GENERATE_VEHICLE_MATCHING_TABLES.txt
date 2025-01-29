@@ -1,0 +1,198 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.GENERATE_VEHICLE_MATCHING_TABLES()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+DECLARE
+    result_msg STRING;
+BEGIN
+    -- Table 1: MATCHING Vehicle Codes (Full matching Vehicle Codes between Timesheet and Supplier Tables)
+    CREATE OR REPLACE TABLE GB_TIMESHEET_IN_SUPPLIER AS
+    WITH supplier_mappings AS (
+        SELECT DISTINCT
+            CASE 
+                WHEN COMPANY = ''Quartz Plant Hire'' THEN ''QUARTZ''
+                WHEN COMPANY = ''KLT Machinery and Plant Hire'' THEN ''KLT''
+                WHEN COMPANY = ''Red Top Asset Management'' THEN ''REDTOP''
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    ),
+    supplier_registration AS (
+        SELECT ''REDTOP'' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+        UNION ALL
+        SELECT ''QUARTZ'', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+        UNION ALL
+        SELECT ''KLT'', REGISTRATION_NUMBER FROM KLT_TELEMATICS
+    ),
+    supplier_registration_distinct As (
+    SELECT DISTINCT supplier,REGISTRATION_NUMBER
+    from  supplier_registration)
+
+    
+    SELECT DISTINCT
+        m.Supplier, 
+        m.VEHICLE_CODE
+    FROM supplier_mappings m
+    JOIN supplier_registration_distinct t 
+        ON m.Supplier = t.Supplier 
+        AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER;
+
+
+        
+    -- Rest of the previous procedure remains the same...
+    -- Table 2: Vehicles in Timesheet Not in Supplier Table
+    CREATE OR REPLACE TABLE GB_IN_TIMESHEET_NOT_SUPPLIER AS
+    WITH supplier_mappings AS (
+        SELECT 
+            CASE 
+                WHEN COMPANY = ''Quartz Plant Hire'' THEN ''QUARTZ''
+                WHEN COMPANY = ''KLT Machinery and Plant Hire'' THEN ''KLT''
+                WHEN COMPANY = ''Red Top Asset Management'' THEN ''REDTOP''
+            END AS Supplier,
+            VEHICLE_CODE
+        FROM TIMESHEET_TIMESHEET
+    ),
+    supplier_join AS
+    (SELECT 
+        Supplier,
+        VEHICLE_CODE 
+    FROM (
+        SELECT 
+            m.Supplier, 
+            m.VEHICLE_CODE
+        FROM supplier_mappings m
+        LEFT JOIN (
+             SELECT DISTINCT Supplier, REGISTRATION_NUMBER 
+            FROM
+            (SELECT ''REDTOP'' AS Supplier, REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+            UNION ALL
+            SELECT ''QUARTZ'', REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+            UNION ALL
+            SELECT ''KLT'', REGISTRATION_NUMBER FROM KLT_TELEMATICS)
+        ) t ON m.Supplier = t.Supplier AND m.VEHICLE_CODE = t.REGISTRATION_NUMBER
+        WHERE t.REGISTRATION_NUMBER IS NULL
+    )),
+
+    Supplier_Code_1 as
+    
+    (select *
+    FROM supplier_join)
+
+    select distinct * FROM Supplier_Code_1
+    ;
+
+    
+
+    -- Table 3: Summary of Matching and Non-Matching Vehicles
+    
+    CREATE OR REPLACE TABLE GB_VEHICLE_MATCH_SUMMARY AS
+    With V_Matches as 
+     (select SUPPLIER,Count( VEHICLE_CODE) AS MATCHES from GB_TIMESHEET_IN_SUPPLIER
+     GROUP BY SUPPLIER),
+     
+    Non_V_Matches AS 
+       (select SUPPLIER,Count( VEHICLE_CODE) AS NON_MATCHES from GB_IN_TIMESHEET_NOT_SUPPLIER
+       GROUP BY SUPPLIER),
+       
+    Match_Summary AS (
+       SELECT A.SUPPLIER as SUPPLIER_M ,A.MATCHES ,B.SUPPLIER AS SUPPLIER_NM , B.NON_MATCHES 
+       FROM V_Matches AS A
+       FULL OUTER JOIN Non_V_Matches AS B
+       ON A.SUPPLIER = B.SUPPLIER 
+       ),
+       
+   Match_Summary_Mod_1 AS (
+       select * ,
+            CASE WHEN SUPPLIER_M IS NOT NULL THEN SUPPLIER_M
+            ELSE SUPPLIER_NM
+            END AS SUPPLIER
+       FROM Match_Summary),
+
+   Match_Summary_Mod_2 AS 
+   (
+    SELECT SUPPLIER, MATCHES, NON_MATCHES
+    FROM Match_Summary_Mod_1
+   ),
+    Match_Summary_Mod_3 AS 
+    (
+   SELECT SUPPLIER, 
+           COALESCE(MATCHES, 0) AS MATCHES, 
+           COALESCE(NON_MATCHES, 0) AS NON_MATCHES
+   FROM Match_Summary_Mod_2
+   
+   UNION 
+   
+   SELECT ''Total'' as SUPPLIER , 
+           SUM(MATCHES) AS MATCHED , 
+           SUM(NON_MATCHES) AS NON_MATCHES
+   FROM GB_VEHICLE_MATCH_SUMMARY
+   )
+
+   select * from Match_Summary_Mod_3; 
+
+   
+
+    -- -- Table 4: Vehicles in Supplier Table Not in Timesheet
+    
+       CREATE OR REPLACE TABLE GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET AS
+       With Distinct_Vehicles_Red AS 
+        
+        (SELECT DISTINCT REGISTRATION_NUMBER FROM REDTOP_TELEMATICS
+        WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET)
+        ),
+
+        redtop_final as (
+        
+        SELECT ''REDTOP'' AS SUPPLIER , * FROM Distinct_Vehicles_Red
+        ORDER BY REGISTRATION_NUMBER
+        ), 
+
+        -- select * from redtop_final ;
+        
+        -- -- For KLT 
+        
+        Distinct_Vehicles_KLT AS 
+        
+        (SELECT DISTINCT REGISTRATION_NUMBER FROM KLT_TELEMATICS
+         WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) ),
+
+        klt_final AS
+        
+        (SELECT ''KLT'' AS SUPPLIER , * FROM Distinct_Vehicles_Klt
+        ORDER BY REGISTRATION_NUMBER),
+        
+        -- For QUARTZ
+        
+        Distinct_Vehicles_Quartz AS 
+           (SELECT DISTINCT REGISTRATION_NUMBER FROM QUARTZ_TELEMATICS
+        WHERE REGISTRATION_NUMBER NOT IN (SELECT DISTINCT VEHICLE_CODE FROM TIMESHEET_TIMESHEET) ),
+
+        quartz_final AS 
+        
+        (SELECT ''QUARTZ'' AS SUPPLIER , * FROM Distinct_Vehicles_Quartz
+        ORDER BY REGISTRATION_NUMBER)
+
+    
+        --- Union all the above 
+        select * from redtop_final
+
+        union
+
+        select * from klt_final
+
+        union 
+
+        select * from quartz_final ;
+
+
+        CREATE OR REPLACE TABLE GB_VEHICLE_NON_MATCHES_SUMMARY AS
+
+        (select SUPPLIER , Count(*) as Counts 
+        FROM GB_VEHICLE_IN_SUPPLIER_NOT_TIMESHEET
+        GROUP BY SUPPLIER );
+        
+    result_msg := ''Successfully created vehicle matching tables'';
+    RETURN result_msg;
+END;
+';

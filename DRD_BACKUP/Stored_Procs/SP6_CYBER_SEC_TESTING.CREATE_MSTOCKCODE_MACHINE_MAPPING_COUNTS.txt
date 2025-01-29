@@ -1,0 +1,41 @@
+CREATE OR REPLACE PROCEDURE TEST_YMH.CYBER_SEC_TESTING.CREATE_MSTOCKCODE_MACHINE_MAPPING_COUNTS()
+RETURNS VARCHAR(16777216)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+    CREATE OR REPLACE TABLE mstockcode_machine_mapping_counts AS
+    WITH Counts AS (
+        -- Distinct Machines
+        SELECT ''Dstnct_Machines'' AS Description, COUNT(DISTINCT machine) AS Count, ''gb_enriched_timesheets_w_order_details_single_line'' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+        
+        UNION ALL
+        
+        -- Distinct StockCode
+        SELECT ''Dstnct_StockCode'' AS Description, COUNT(DISTINCT "MStockCode") AS Count, ''gb_enriched_timesheets_w_order_details_single_line'' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+        
+        UNION ALL
+        
+        -- Distinct Machine and StockCode Combination
+        SELECT ''Dstnct_Mach_StkCde'' AS Description, COUNT(DISTINCT machine, "MStockCode") AS Count, ''gb_enriched_timesheets_w_order_details_single_line'' AS Table_Name
+        FROM gb_enriched_timesheets_w_order_details_single_line
+    )
+    SELECT Description, Count AS Counts_PriorCorrection, Table_Name FROM Counts
+    
+    UNION ALL
+    
+    -- Calculate Erroneous Descriptions
+    SELECT ''Erroneous_Descriptions'' AS Description,
+    (SELECT Count FROM Counts WHERE Description = ''Dstnct_StockCode'') -
+    (SELECT Count FROM Counts WHERE Description = ''Dstnct_Machines'') AS Counts_PriorCorrection,
+    ''gb_enriched_timesheets_w_order_details_single_line'' AS Table_Name
+    
+    UNION ALL
+    
+    -- Calculate Ambiguous Combos
+    SELECT ''Ambiguous_Combos'' AS Description,
+    (SELECT Count FROM Counts WHERE Description = ''Dstnct_Mach_StkCde'') -
+    (SELECT Count FROM Counts WHERE Description = ''Dstnct_Machines'') AS Counts_PriorCorrection,
+    ''gb_enriched_timesheets_w_order_details_single_line'' AS Table_Name;
+';
